@@ -83,7 +83,7 @@ export default function Dashboard() {
                   onClick={() => setTipoAtivo('energia')}
                   className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
                     tipoAtivo === 'energia'
-                      ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30'
+                      ? 'bg-gradient-to-r from-yellow-300 to-yellow-300 text-white shadow-lg shadow-yellow-300/30'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -110,7 +110,7 @@ export default function Dashboard() {
         {/* Cards de Resumo */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow">
-            <div className={`flex items-center gap-3 mb-3 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-orange-600'}`}>
+            <div className={`flex items-center gap-3 mb-3 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-yellow-700'}`}>
               {tipoAtivo === 'agua' ? <Droplets className="w-6 h-6" /> : <Zap className="w-6 h-6" />}
               <span className="text-sm font-semibold">Consumo Total</span>
             </div>
@@ -132,9 +132,9 @@ export default function Dashboard() {
         </div>
 
         {/* Gráfico */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow">
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow">
           <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
-            <TrendingUp className={`w-5 h-5 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-orange-600'}`} />
+            <TrendingUp className={`w-5 h-5 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-yellow-700'}`} />
             Consumo Recente (por Leitura)
           </h3>
           
@@ -152,7 +152,7 @@ export default function Dashboard() {
                 />
                 <Bar dataKey="valor" radius={[4, 4, 0, 0]}>
                   {dadosGrafico.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={tipoAtivo === 'energia' ? '#FF6B35' : '#3F76FF'} />
+                    <Cell key={`cell-${index}`} fill={tipoAtivo === 'energia' ? '#FCD34D' : '#3F76FF'} />
                   ))}
                 </Bar>
               </BarChart>

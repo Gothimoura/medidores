@@ -219,7 +219,7 @@ export default function Leitura() {
                   onClick={() => setTipoAtivo('energia')}
                   className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
                     tipoAtivo === 'energia'
-                      ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30'
+                      ? 'bg-gradient-to-r from-yellow-300 to-yellow-300 text-white shadow-lg shadow-yellow-300/30'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -255,9 +255,9 @@ export default function Leitura() {
                 <div className={`flex items-center gap-3 ${currentStep === step.num ? 'scale-105' : ''} transition-transform`}>
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold transition-all duration-300 ${
                     step.done
-                      ? tipoAtivo === 'agua'
+                        ? tipoAtivo === 'agua'
                         ? 'bg-gradient-to-br from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/30'
-                        : 'bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30'
+                        : 'bg-gradient-to-br from-yellow-300 to-yellow-300 text-white shadow-lg shadow-yellow-300/30'
                       : currentStep === step.num
                       ? 'bg-white border-2 border-gray-300 text-gray-700'
                       : 'bg-gray-100 text-gray-400'
@@ -282,10 +282,10 @@ export default function Leitura() {
           <div className="md:hidden flex items-center justify-center gap-2 pb-2">
             {[1, 2, 3, 4, 5].map(num => (
               <div key={num} className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold transition-all flex-shrink-0 ${
-                currentStep > num
+                  currentStep > num
                   ? tipoAtivo === 'agua'
                     ? 'bg-blue-500 text-white'
-                    : 'bg-orange-500 text-white'
+                    : 'bg-yellow-300 text-white'
                   : currentStep === num
                   ? 'bg-white border-2 border-gray-400 text-gray-700 scale-110'
                   : 'bg-gray-200 text-gray-400'
@@ -300,7 +300,7 @@ export default function Leitura() {
         {mensagem && (
           <div className={`mb-6 p-4 rounded-2xl flex items-center gap-3 animate-in slide-in-from-top duration-300 ${
             mensagem.includes('Alerta')
-              ? 'bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 text-orange-900'
+              ? 'bg-gradient-to-r from-yellow-50 to-yellow-50 border border-yellow-200 text-yellow-800'
               : 'bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 text-emerald-900'
           }`}>
             <CheckCircle className="w-6 h-6 flex-shrink-0" />
@@ -317,7 +317,7 @@ export default function Leitura() {
             {/* Card de Seleção de Localização */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow">
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <Building className={`w-5 h-5 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-orange-600'}`} />
+                <Building className={`w-5 h-5 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-yellow-700'}`} />
                 Localização do Medidor de {tipoAtivo === 'agua' ? 'Água' : 'Energia'}
               </h2>
               
@@ -377,7 +377,7 @@ export default function Leitura() {
             {/* Card de Leitura */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow">
                   <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <TrendingUp className={`w-5 h-5 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-orange-600'}`} />
+                <TrendingUp className={`w-5 h-5 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-yellow-700'}`} />
                 Valor da Leitura {tipoAtivo === 'agua' ? '(m³)' : '(kWh)'}
               </h2>
               
@@ -394,7 +394,7 @@ export default function Leitura() {
                         ? 'bg-gray-100 border-2 border-gray-200 text-gray-400 cursor-not-allowed'
                         : isMenorQueAnterior || isConsumoAlto
                         ? 'bg-red-50 border-2 border-red-400 text-red-600 focus:border-red-500'
-                        : `bg-gray-50 border-2 border-gray-300 text-gray-900 ${tipoAtivo === 'agua' ? 'focus:border-blue-500' : 'focus:border-orange-500'}`
+                        : `bg-gray-50 border-2 border-gray-300 text-gray-900 ${tipoAtivo === 'agua' ? 'focus:border-blue-500' : 'focus:border-yellow-300'}`
                     }`}
                     placeholder="00000"
                     value={leituraAtual}
@@ -408,7 +408,7 @@ export default function Leitura() {
 
                 {/* Alertas de Validação */}
                 {isMenorQueAnterior && (
-                  <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-xl p-5">
+                  <div className="bg-gradient-to-r from-red-50 to-yellow-50 border-2 border-red-200 rounded-xl p-5">
                     <div className="flex items-start gap-3 mb-4">
                       <AlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
                       <div>
@@ -442,11 +442,11 @@ export default function Leitura() {
                 )}
 
                 {isConsumoAlto && (
-                  <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-300 rounded-xl p-5 flex items-start gap-3">
-                    <TrendingUp className="w-6 h-6 text-orange-600 flex-shrink-0 mt-0.5" />
+                  <div className="bg-gradient-to-r from-yellow-50 to-yellow-50 border-2 border-yellow-300 rounded-xl p-5 flex items-start gap-3">
+                    <TrendingUp className="w-6 h-6 text-yellow-700 flex-shrink-0 mt-0.5" />
                     <div>
-                      <h4 className="font-bold text-orange-900 mb-1">Consumo Elevado Detectado</h4>
-                      <p className="text-sm text-orange-700">
+                      <h4 className="font-bold text-yellow-800 mb-1">Consumo Elevado Detectado</h4>
+                      <p className="text-sm text-yellow-700">
                         O consumo de <span className="font-bold">{consumo}</span> está{' '}
                         <span className="font-bold">{Math.round(((consumo/mediaHistorica)-1)*100)}%</span> acima da média histórica.
                       </p>
@@ -459,7 +459,7 @@ export default function Leitura() {
             {/* Card de Foto */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow">
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <Camera className={`w-5 h-5 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-orange-600'}`} />
+                <Camera className={`w-5 h-5 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-yellow-700'}`} />
                 Evidência Fotográfica
               </h2>
 
@@ -482,7 +482,7 @@ export default function Leitura() {
                         ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
                         : tipoAtivo === 'agua'
                         ? 'border-gray-300 bg-gradient-to-br from-gray-50 to-white hover:border-blue-400 hover:bg-blue-50 text-gray-700 hover:text-blue-700'
-                        : 'border-gray-300 bg-gradient-to-br from-gray-50 to-white hover:border-orange-400 hover:bg-orange-50 text-gray-700 hover:text-orange-700'
+                        : 'border-gray-300 bg-gradient-to-br from-gray-50 to-white hover:border-yellow-300 hover:bg-yellow-50 text-gray-700 hover:text-yellow-700'
                     }`}
                 >
                   <Camera className="w-12 h-12" />
@@ -521,10 +521,10 @@ export default function Leitura() {
                   !podeEnviar
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     : isConsumoAlto || isMenorQueAnterior
-                    ? 'bg-gradient-to-r from-orange-600 to-red-600 text-white shadow-orange-500/50 hover:shadow-2xl'
+                    ? 'bg-gradient-to-r from-yellow-500 to-red-600 text-white shadow-yellow-300/50 hover:shadow-2xl'
                     : tipoAtivo === 'agua'
                     ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-blue-500/50 hover:shadow-2xl'
-                    : 'bg-gradient-to-r from-orange-600 to-amber-600 text-white shadow-orange-500/50 hover:shadow-2xl'
+                    : 'bg-gradient-to-r from-yellow-500 to-yellow-500 text-white shadow-yellow-300/50 hover:shadow-2xl'
                 }`}
               >
                 {loading ? (
@@ -562,12 +562,12 @@ export default function Leitura() {
                 </div>
 
                 {/* Média Histórica */}
-                <div className={`bg-gradient-to-br ${tipoAtivo === 'agua' ? 'from-blue-50 to-cyan-50 border-blue-200' : 'from-orange-50 to-amber-50 border-orange-200'} rounded-xl p-4 border`}>
+                <div className={`bg-gradient-to-br ${tipoAtivo === 'agua' ? 'from-blue-50 to-cyan-50 border-blue-200' : 'from-yellow-50 to-yellow-50 border-yellow-200'} rounded-xl p-4 border`}>
                   <div className="flex items-center justify-between mb-2">
-                    <span className={`text-xs font-semibold ${tipoAtivo === 'agua' ? 'text-blue-700' : 'text-orange-700'} uppercase tracking-wide`}>Média Histórica</span>
-                    <TrendingUp className={`w-4 h-4 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-orange-600'}`} />
+                    <span className={`text-xs font-semibold ${tipoAtivo === 'agua' ? 'text-blue-700' : 'text-yellow-700'} uppercase tracking-wide`}>Média Histórica</span>
+                    <TrendingUp className={`w-4 h-4 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-yellow-700'}`} />
                   </div>
-                  <div className={`text-3xl font-black ${tipoAtivo === 'agua' ? 'text-blue-900' : 'text-orange-900'}`}>
+                  <div className={`text-3xl font-black ${tipoAtivo === 'agua' ? 'text-blue-900' : 'text-yellow-800'}`}>
                     {mediaHistorica ? Math.round(mediaHistorica).toLocaleString() : '—'}
                   </div>
                 </div>
@@ -576,19 +576,19 @@ export default function Leitura() {
                 {leituraAtual && (
                   <div className={`bg-gradient-to-br rounded-xl p-4 border-2 ${
                     isConsumoAlto
-                      ? 'from-orange-50 to-red-50 border-orange-300'
+                      ? 'from-yellow-50 to-red-50 border-yellow-300'
                       : 'from-emerald-50 to-green-50 border-emerald-300'
                   }`}>
                     <div className="flex items-center justify-between mb-2">
                       <span className={`text-xs font-semibold uppercase tracking-wide ${
-                        isConsumoAlto ? 'text-orange-700' : 'text-emerald-700'
+                        isConsumoAlto ? 'text-yellow-700' : 'text-emerald-700'
                       }`}>
                         Consumo Atual
                       </span>
-                      <TrendingUp className={`w-4 h-4 ${isConsumoAlto ? 'text-orange-600' : 'text-emerald-600'}`} />
+                      <TrendingUp className={`w-4 h-4 ${isConsumoAlto ? 'text-yellow-700' : 'text-emerald-600'}`} />
                     </div>
                     <div className={`text-3xl font-black ${
-                      isConsumoAlto ? 'text-orange-900' : 'text-emerald-900'
+                      isConsumoAlto ? 'text-yellow-800' : 'text-emerald-900'
                     }`}>
                       {consumo >= 0 ? consumo.toLocaleString() : '—'}
                     </div>
@@ -613,10 +613,10 @@ export default function Leitura() {
                     !podeEnviar
                       ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                       : isConsumoAlto || isMenorQueAnterior
-                      ? 'bg-gradient-to-r from-orange-600 to-red-600 text-white shadow-orange-500/50 hover:shadow-2xl'
+                      ? 'bg-gradient-to-r from-yellow-500 to-red-600 text-white shadow-yellow-300/50 hover:shadow-2xl'
                       : tipoAtivo === 'agua'
                       ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-blue-500/50 hover:shadow-2xl'
-                      : 'bg-gradient-to-r from-orange-600 to-amber-600 text-white shadow-orange-500/50 hover:shadow-2xl'
+                      : 'bg-gradient-to-r from-yellow-500 to-yellow-500 text-white shadow-yellow-300/50 hover:shadow-2xl'
                   }`}
                 >
                   {loading ? (
@@ -635,12 +635,12 @@ export default function Leitura() {
             </div>
 
             {/* Card de Ajuda */}
-            <div className={`hidden md:block bg-gradient-to-br ${tipoAtivo === 'agua' ? 'from-blue-50 to-cyan-50 border-blue-200' : 'from-orange-50 to-amber-50 border-orange-200'} rounded-2xl shadow-lg border p-6`}>
-              <h3 className={`text-lg font-bold ${tipoAtivo === 'agua' ? 'text-blue-900' : 'text-orange-900'} mb-3 flex items-center gap-2`}>
+            <div className={`hidden md:block bg-gradient-to-br ${tipoAtivo === 'agua' ? 'from-blue-50 to-cyan-50 border-blue-200' : 'from-yellow-50 to-yellow-50 border-yellow-200'} rounded-2xl shadow-lg border p-6`}>
+              <h3 className={`text-lg font-bold ${tipoAtivo === 'agua' ? 'text-blue-900' : 'text-yellow-800'} mb-3 flex items-center gap-2`}>
                 <Info className="w-5 h-5" />
                 Dica
               </h3>
-              <p className={`text-sm ${tipoAtivo === 'agua' ? 'text-blue-800' : 'text-orange-800'} leading-relaxed`}>
+              <p className={`text-sm ${tipoAtivo === 'agua' ? 'text-blue-800' : 'text-yellow-700'} leading-relaxed`}>
                 Tire uma foto clara do medidor, garantindo que todos os dígitos estejam visíveis. 
                 Isso ajuda na auditoria posterior e comprova o valor registrado.
               </p>

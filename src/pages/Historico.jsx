@@ -209,7 +209,7 @@ export default function Historico() {
                   onClick={() => setTipoAtivo('energia')}
                   className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
                     tipoAtivo === 'energia'
-                      ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30'
+                      ? 'bg-gradient-to-r from-yellow-300 to-yellow-300 text-white shadow-lg shadow-yellow-300/30'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -303,7 +303,7 @@ export default function Historico() {
             {leituras.map((item) => (
               <div key={item.id_registro} className="bg-white p-3 rounded-gowork shadow-sm border border-gray-100 flex gap-3 animate-in slide-in-from-bottom-2">
                 
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 mt-1 ${tipoAtivo === 'energia' ? 'bg-orange-50 text-orange-500' : 'bg-blue-50 text-blue-500'}`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 mt-1 ${tipoAtivo === 'energia' ? 'bg-yellow-50 text-yellow-700' : 'bg-blue-50 text-blue-500'}`}>
                   {tipoAtivo === 'energia' ? <Zap className="w-5 h-5" /> : <Droplets className="w-5 h-5" />}
                 </div>
 
@@ -331,7 +331,7 @@ export default function Historico() {
                         <span className="text-xs text-gray-400">{tipoAtivo === 'agua' ? 'm³' : 'kWh'}</span>
                       </div>
                       {item.consumo_calculado !== null && (
-                        <div className={`text-xs font-medium ${item.consumo_calculado < 0 ? 'text-orange-500' : 'text-green-600'}`}>
+                        <div className={`text-xs font-medium ${item.consumo_calculado < 0 ? 'text-yellow-700' : 'text-green-600'}`}>
                           {item.consumo_calculado < 0 ? 'Ajuste/Virada' : `Consumo: ${item.consumo_calculado}`}
                         </div>
                       )}
@@ -346,7 +346,7 @@ export default function Historico() {
                       <button onClick={() => abrirEdicao(item)} className={`p-2 rounded-lg border transition-colors ${
                         tipoAtivo === 'agua'
                           ? 'text-blue-500 bg-blue-50 hover:bg-blue-100 border-blue-100'
-                          : 'text-orange-500 bg-orange-50 hover:bg-orange-100 border-orange-100'
+                          : 'text-yellow-700 bg-yellow-50 hover:bg-yellow-100 border-yellow-100'
                       }`}>
                         <Edit2 className="w-4 h-4" />
                       </button>
