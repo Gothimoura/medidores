@@ -7,6 +7,42 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null) // null = não logado
   const [loading, setLoading] = useState(true)
 
+  // Função para validar o token salvo no localStorage
+  async function validarTokenN1(token) {
+    try {
+      const { data, error } = await supabase
+        .from('tokens_acesso')
+        .select('*')
+        .eq('token', token)
+        .eq('ativo', true)
+        .single()
+
+      if (error || !data) {
+        // Token inválido ou inativo, remove do localStorage
+        localStorage.removeItem('gowork_token_n1')
+        setUser(null)
+        setLoading(false)
+        return
+      }
+
+      // Token válido: Define o usuário como "Operacional"
+      const usuarioN1 = { 
+        id: data.id, 
+        role: 'n1', 
+        nome: data.descricao,
+        tipo: 'qr_code' 
+      }
+      
+      setUser(usuarioN1)
+      setLoading(false)
+    } catch (error) {
+      console.error('Erro ao validar token:', error)
+      localStorage.removeItem('gowork_token_n1')
+      setUser(null)
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     // Verifica se já tem um "crachá" salvo no navegador ao abrir o app
     const tokenSalvo = localStorage.getItem('gowork_token_n1')
