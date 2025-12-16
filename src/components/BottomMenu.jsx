@@ -17,7 +17,7 @@ export default function BottomMenu() {
         
         <Link to="/" className={`flex flex-col items-center gap-1 transition-all duration-300 ${isActive('/')}`}>
           <PlusSquare className="w-7 h-7" />
-          <span className="text-[11px] font-semibold tracking-tight">Leitura</span>
+          <span className="text-[11px] font-semibold tracking-tight">Nova Leitura</span>
         </Link>
 
         <Link to="/historico" className={`flex flex-col items-center gap-1 transition-all duration-300 ${isActive('/historico')}`}>

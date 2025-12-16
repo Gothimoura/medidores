@@ -7,6 +7,7 @@ import Leitura from './pages/Leitura'
 import Historico from './pages/Historico'
 import Dashboard from './pages/Dashboard'
 import Login from './pages/login' // <--- Import novo
+import OpcaoEntrada from './pages/OpcaoEntrada'
 
 // Componente para proteger rotas
 function RotaPrivada({ children }) {
@@ -34,7 +35,8 @@ function App() {
                 <Layout />
               </RotaPrivada>
             }>
-              <Route index element={<Leitura />} />
+              <Route index element={<OpcaoEntrada />} />
+              <Route path="leitura" element={<Leitura />} />
               <Route path="historico" element={<Historico />} />
               <Route path="dashboard" element={<Dashboard />} />
             </Route>

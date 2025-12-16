@@ -1,42 +1,64 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { supabase } from '../supabaseClient'
-import { Camera, CheckCircle, Trash2, AlertTriangle, TrendingUp, Droplets, Zap, Building, MapPin, ArrowRight, Info, BarChart3, History, ChevronDown } from 'lucide-react'
+import { Scanner } from '@yudiel/react-qr-scanner'
+import { 
+  Camera, CheckCircle, Trash2, AlertTriangle, TrendingUp, 
+  Droplets, Zap, Building, MapPin, ArrowRight, Info, 
+  BarChart3, History, QrCode, X, Search 
+} from 'lucide-react'
 import CustomSelect from '../components/CustomSelect'
 
 // CONFIGURAÇÕES
-const N8N_WEBHOOK_URL = ''
+const N8N_WEBHOOK_URL = '' // Se tiver webhook, coloque aqui
 const PORCENTAGEM_ALERTA = 0.60 
 const VALOR_SEM_ANDAR = '___SEM_ANDAR___'
 
 export default function Leitura() {
   const { tipoAtivo, setTipoAtivo } = useTheme()
   const [todosMedidores, setTodosMedidores] = useState([])
+  
+  // Estados de Seleção
   const [predioSelecionado, setPredioSelecionado] = useState('')
   const [andarSelecionado, setAndarSelecionado] = useState('')
   const [medidorSelecionado, setMedidorSelecionado] = useState('')
+  
+  // Estados de Leitura e Comparação
   const [leituraAnterior, setLeituraAnterior] = useState(null)
   const [leituraAtual, setLeituraAtual] = useState('')
   const [mediaHistorica, setMediaHistorica] = useState(null)
+  
+  // Estados de UI
   const [foto, setFoto] = useState(null)
   const [previewUrl, setPreviewUrl] = useState(null)
   const [loading, setLoading] = useState(false)
   const [mensagem, setMensagem] = useState(null)
   const [motivoValidacao, setMotivoValidacao] = useState('')
+  
+  // Estado do Scanner
+  const [mostrarScanner, setMostrarScanner] = useState(false)
+  
   const fileInputRef = useRef(null)
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  // Fetch medidores
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('scan') === 'true') {
+      setMostrarScanner(true);
+    }
+  }, [location]);
+
+  // 1. CARREGA LISTA DE MEDIDORES DO TIPO ATUAL
   useEffect(() => {
     async function fetchMedidores() {
-      setTodosMedidores([])
-      setPredioSelecionado('')
-      setAndarSelecionado('')
-      setMedidorSelecionado('')
-      setLeituraAtual('')
-      setFoto(null)
-      setPreviewUrl(null)
-
+      // Se já temos um medidor selecionado (via QR Code), mantemos o filtro visualmente
+      if (!medidorSelecionado) {
+        setPredioSelecionado('')
+        setAndarSelecionado('')
+      }
+      
       const { data } = await supabase
         .from('medidores')
         .select('*')
@@ -48,7 +70,56 @@ export default function Leitura() {
     fetchMedidores()
   }, [tipoAtivo])
 
-  // Lógica de filtros
+  // 2. FUNÇÃO PRINCIPAL: Processar o UUID do Scanner
+  const handleMedidorScan = async (result) => {
+    if (!result || result.length === 0) return
+    
+    // O Scanner lê o UUID direto (ex: "da81ac95-6306-4f6c...")
+    const tokenLido = result[0].rawValue 
+    
+    setMostrarScanner(false)
+    setLoading(true)
+
+    try {
+      // BUSCA EXATA PELO TOKEN (UUID)
+      // Aqui acontece a validação que você pediu
+      const { data: medidor, error } = await supabase
+        .from('medidores')
+        .select('*')
+        .eq('token', tokenLido) 
+        .single()
+
+      if (error || !medidor) {
+        throw new Error('QR Code não cadastrado ou medidor não encontrado.')
+      }
+
+      // SUCESSO! PREENCHE O SISTEMA SOZINHO:
+      
+      // 1. Se o medidor for de outro tipo (ex: leu Energia estando na tela de Água), troca sozinho
+      if (medidor.tipo !== tipoAtivo) {
+        setTipoAtivo(medidor.tipo)
+        // Pequena pausa para o React atualizar o estado do tema e recarregar a lista 'todosMedidores'
+        await new Promise(r => setTimeout(r, 200)) 
+      }
+
+      // 2. Preenche os filtros visuais
+      setPredioSelecionado(medidor.local_unidade)
+      setAndarSelecionado(medidor.andar || VALOR_SEM_ANDAR)
+      
+      // 3. Seleciona o medidor (Isso vai disparar a busca do histórico automaticamente)
+      setMedidorSelecionado(medidor.id)
+      
+      setMensagem(`Identificado: ${medidor.nome}`)
+      setTimeout(() => setMensagem(null), 3000)
+
+    } catch (err) {
+      alert(err.message) // Mostra erro se o QR não for válido
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Lógica de Filtros para os Selects Manuais (Caso não use o QR)
   const prediosUnicos = [...new Set(todosMedidores.map(m => m.local_unidade).filter(Boolean))].sort()
   
   let andaresOpcoes = []
@@ -68,12 +139,20 @@ export default function Leitura() {
     return m.andar === andarSelecionado
   })
 
-  // Busca dados do medidor
+  // 3. BUSCA HISTÓRICO E MÉDIA QUANDO UM MEDIDOR É SELECIONADO
   useEffect(() => {
     if (!medidorSelecionado) return
 
     async function fetchDadosMedidor() {
-      const nomeMedidor = todosMedidores.find(m => m.id == medidorSelecionado)?.nome
+      // Tenta achar o nome na lista carregada
+      let nomeMedidor = todosMedidores.find(m => m.id == medidorSelecionado)?.nome
+      
+      // Fallback: Se a lista 'todosMedidores' ainda não atualizou após a troca de QR Code, busca direto no banco
+      if (!nomeMedidor) {
+         const { data } = await supabase.from('medidores').select('nome').eq('id', medidorSelecionado).single()
+         if(data) nomeMedidor = data.nome
+      }
+
       if (!nomeMedidor) return
 
       const viewAlvo = tipoAtivo === 'agua' ? 'view_hidrometros_calculada' : 'view_energia_calculada'
@@ -83,10 +162,12 @@ export default function Leitura() {
         .select('leitura_num, consumo_calculado')
         .eq('identificador_relogio', nomeMedidor)
         .order('data_real', { ascending: false })
-        .limit(10)
+        .limit(10) // Pega as últimas 10 leituras para média
 
       if (historico && historico.length > 0) {
         setLeituraAnterior(historico[0].leitura_num || 0)
+        
+        // Calcula média histórica ignorando nulos e negativos
         const consumosValidos = historico.map(h => h.consumo_calculado).filter(c => c !== null && c >= 0)
         if (consumosValidos.length > 0) {
           const soma = consumosValidos.reduce((a, b) => a + b, 0)
@@ -110,7 +191,7 @@ export default function Leitura() {
     }
   }
 
-  // Cálculos e validação
+  // Cálculos de Validação
   const valorAtualNum = Number(leituraAtual)
   const valorAnteriorNum = Number(leituraAnterior)
   const consumo = leituraAtual ? valorAtualNum - valorAnteriorNum : 0
@@ -118,21 +199,28 @@ export default function Leitura() {
   const isConsumoAlto = !isMenorQueAnterior && mediaHistorica && consumo > (mediaHistorica * (1 + PORCENTAGEM_ALERTA))
   const podeEnviar = leituraAtual && foto && (!isMenorQueAnterior || motivoValidacao !== '')
 
-  // Submit
+  // 4. ENVIO DOS DADOS (SUBMIT)
   async function handleSubmit(e) {
     e.preventDefault()
     if (!podeEnviar) return
     setLoading(true)
     
     try {
+      // Upload da Foto
       const fileExt = foto.name.split('.').pop()
       const fileName = `${Date.now()}_${Math.random()}.${fileExt}`
       const { error: uploadError } = await supabase.storage.from('evidencias').upload(fileName, foto)
       if (uploadError) throw uploadError
       const { data: urlData } = supabase.storage.from('evidencias').getPublicUrl(fileName)
       
-      const medidorObj = todosMedidores.find(m => m.id == medidorSelecionado)
+      // Garante que temos os dados do medidor (mesmo se veio via QR e a lista não carregou)
+      let medidorObj = todosMedidores.find(m => m.id == medidorSelecionado)
+      if(!medidorObj) {
+         const { data } = await supabase.from('medidores').select('*').eq('id', medidorSelecionado).single()
+         medidorObj = data
+      }
       
+      // Monta Observação Automática
       let obsFinal = isConsumoAlto ? `ALERTA: Consumo Alto (+${Math.round((consumo/mediaHistorica - 1)*100)}%)` : ''
       if (isMenorQueAnterior) obsFinal = motivoValidacao === 'virada' ? 'Virada de Relógio' : 'Ajuste Manual'
 
@@ -143,17 +231,18 @@ export default function Leitura() {
         data_hora: new Date().toISOString(),
         apenas_data: new Date().toISOString().split('T')[0],
         foto_url: urlData.publicUrl,
-        usuario: 'App Web',
+        usuario: 'App Web', // Futuramente: pegar do AuthContext
         observacao: obsFinal
       }
 
+      // Salva na tabela correta
       if (tipoAtivo === 'agua') {
         await supabase.from('hidrometros').insert({ ...dadosComuns, leitura_hidrometro: leituraAtual.toString() })
       } else {
         await supabase.from('energia').insert({ ...dadosComuns, leitura_energia: leituraAtual.toString() })
       }
       
-    // N8N
+      // Integração N8N (Opcional)
       if (N8N_WEBHOOK_URL) {
         fetch(N8N_WEBHOOK_URL, {
           method: 'POST',
@@ -162,9 +251,8 @@ export default function Leitura() {
             tipo: tipoAtivo,
             medidor: medidorObj.nome,
             unidade: medidorObj.local_unidade,
-            andar: medidorObj.andar || 'Geral',
             leitura_atual: valorAtualNum,
-            consumo: isMenorQueAnterior ? valorAtualNum : consumo,
+            consumo: consumo,
             alerta: isConsumoAlto || isMenorQueAnterior,
             foto: urlData.publicUrl
           })
@@ -172,15 +260,20 @@ export default function Leitura() {
       }
 
       setMensagem(isConsumoAlto ? 'Salvo! Alerta enviado.' : 'Leitura salva com sucesso!')
+      
+      // Limpa formulário para a próxima
       setLeituraAtual('')
       setFoto(null)
       setPreviewUrl(null)
       setMotivoValidacao('')
-      setMedidorSelecionado('')
+      setMedidorSelecionado('') // Limpa seleção para forçar novo scan ou escolha
+      setPredioSelecionado('')
+      setAndarSelecionado('')
+      
       setTimeout(() => setMensagem(null), 3000)
 
     } catch (error) {
-      alert('Erro: ' + error.message)
+      alert('Erro ao salvar: ' + error.message)
     } finally {
       setLoading(false)
     }
@@ -188,27 +281,54 @@ export default function Leitura() {
 
   const currentStep = !predioSelecionado ? 1 : !andarSelecionado ? 2 : !medidorSelecionado ? 3 : !leituraAtual ? 4 : !foto ? 5 : 6
 
+  const handleCancelScan = () => {
+    setMostrarScanner(false);
+    const params = new URLSearchParams(location.search);
+    if (params.get('scan') === 'true') {
+      navigate('/');
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 py-6 px-4 sm:py-12">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-transparent py-6 px-4 sm:py-12">
+      <div className="max-w-5xl mx-auto px-2 sm:px-6 lg:px-8">
         
-        {/* Header com Tabs */}
+        {/* HEADER E BOTÕES DE AÇÃO */}
         <div className="mb-6 sm:mb-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Registro de Leitura</h1>
-              <p className="text-sm text-gray-600 mt-1">Selecione o tipo de medidor e preencha os dados</p>
+            <div className="flex items-center justify-between w-full md:w-auto">
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Nova Leitura</h1>
+                <p className="text-sm text-gray-600 mt-1">Identificação via QR Code ou Manual</p>
+              </div>
+              
+              {/* Botão Scanner Mobile */}
+              <button 
+                onClick={() => setMostrarScanner(true)}
+                className="md:hidden p-3 bg-gray-900 text-white rounded-xl shadow-lg active:scale-95 flex flex-col items-center gap-1"
+              >
+                <QrCode className="w-6 h-6" />
+                <span className="text-[10px] font-bold">SCAN</span>
+              </button>
             </div>
             
-            {/* Botões Água e Energia + Navegação Desktop */}
-            <div className="flex flex-col items-center sm:flex-row gap-3 sm:items-center justify-center sm:justify-end">
-              {/* Tabs Modernos */}
+            <div className="flex flex-col sm:flex-row gap-3 items-center justify-end">
+               {/* Botão Scanner Desktop */}
+               <button 
+                onClick={() => setMostrarScanner(true)}
+                className="hidden md:flex items-center gap-2 px-4 py-3 bg-gray-800 text-white rounded-xl font-semibold hover:bg-gray-900 shadow-lg transition-transform hover:scale-105 mr-2"
+              >
+                <QrCode className="w-5 h-5" />
+                Escanear Relógio
+              </button>
+
+              {/* Seletor de Tipo (Água/Energia) */}
               <div className="inline-flex bg-white rounded-2xl p-1.5 shadow-lg border border-gray-200">
                 <button
                   onClick={() => setTipoAtivo('agua')}
                   className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
                     tipoAtivo === 'agua'
-                      ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/30'
+                      ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -219,7 +339,7 @@ export default function Leitura() {
                   onClick={() => setTipoAtivo('energia')}
                   className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
                     tipoAtivo === 'energia'
-                      ? 'bg-gradient-to-r from-yellow-300 to-yellow-300 text-white shadow-lg shadow-yellow-300/30'
+                      ? 'bg-gradient-to-r from-yellow-300 to-yellow-300 text-white shadow-lg'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -227,22 +347,10 @@ export default function Leitura() {
                   <span className="hidden sm:inline">Energia</span>
                 </button>
               </div>
-
-              {/* Navegação Desktop - Histórico e Gráficos */}
-              <div className="hidden md:flex gap-2">
-                <Link to="/historico" className="flex items-center gap-2 px-4 py-3 bg-white text-gray-700 rounded-xl font-semibold hover:bg-gray-100 border-2 border-gray-200 transition-all shadow-md">
-                  <History className="w-5 h-5" />
-                  Histórico
-                </Link>
-                <Link to="/dashboard" className="flex items-center gap-2 px-4 py-3 bg-white text-gray-700 rounded-xl font-semibold hover:bg-gray-100 border-2 border-gray-200 transition-all shadow-md">
-                  <BarChart3 className="w-5 h-5" />
-                  Gráficos
-                </Link>
-              </div>
             </div>
           </div>
 
-          {/* Progress Steps - Horizontal em Desktop, Compact em Mobile */}
+          {/* Steps Desktop */}
           <div className="hidden md:flex items-center justify-between gap-2 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
             {[
               { num: 1, title: 'Unidade', icon: Building, done: !!predioSelecionado },
@@ -253,11 +361,9 @@ export default function Leitura() {
             ].map((step, idx, arr) => (
               <div key={step.num} className="flex items-center flex-1">
                 <div className={`flex items-center gap-3 ${currentStep === step.num ? 'scale-105' : ''} transition-transform`}>
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold transition-all duration-300 ${
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold transition-all ${
                     step.done
-                        ? tipoAtivo === 'agua'
-                        ? 'bg-gradient-to-br from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/30'
-                        : 'bg-gradient-to-br from-yellow-300 to-yellow-300 text-white shadow-lg shadow-yellow-300/30'
+                      ? (tipoAtivo === 'agua' ? 'bg-blue-500 text-white' : 'bg-yellow-300 text-white')
                       : currentStep === step.num
                       ? 'bg-white border-2 border-gray-300 text-gray-700'
                       : 'bg-gray-100 text-gray-400'
@@ -266,384 +372,217 @@ export default function Leitura() {
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 font-medium">Passo {step.num}</div>
-                    <div className={`text-sm font-semibold ${step.done || currentStep === step.num ? 'text-gray-900' : 'text-gray-400'}`}>
-                      {step.title}
-                    </div>
+                    <div className="text-sm font-semibold text-gray-900">{step.title}</div>
                   </div>
                 </div>
-                {idx < arr.length - 1 && (
-                  <ArrowRight className={`mx-2 flex-shrink-0 ${step.done ? 'text-gray-400' : 'text-gray-300'}`} />
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Progress Compact para Mobile */}
-          <div className="md:hidden flex items-center justify-center gap-2 pb-2">
-            {[1, 2, 3, 4, 5].map(num => (
-              <div key={num} className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold transition-all flex-shrink-0 ${
-                  currentStep > num
-                  ? tipoAtivo === 'agua'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-yellow-300 text-white'
-                  : currentStep === num
-                  ? 'bg-white border-2 border-gray-400 text-gray-700 scale-110'
-                  : 'bg-gray-200 text-gray-400'
-              }`}>
-                {currentStep > num ? <CheckCircle className="w-5 h-5" /> : num}
+                {idx < arr.length - 1 && <ArrowRight className="mx-2 text-gray-300" />}
               </div>
             ))}
           </div>
         </div>
 
-        {/* Alert Message */}
+        {/* MODAL DO SCANNER */}
+        {mostrarScanner && (
+          <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center p-4 animate-in fade-in">
+            <div className="w-full max-w-sm relative">
+              <h3 className="text-white text-center text-lg font-bold mb-4">Aponte para o QR Code (UUID)</h3>
+              <div className="rounded-2xl overflow-hidden border-2 border-white shadow-2xl">
+                <Scanner 
+                  onScan={handleMedidorScan} 
+                  scanDelay={500} 
+                  allowMultiple={false} 
+                />
+              </div>
+              <button 
+                onClick={handleCancelScan}
+                className="mt-6 w-full py-3 bg-white/20 border border-white/30 text-white rounded-xl font-bold backdrop-blur-sm"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* MENSAGEM DE SUCESSO/ALERTA */}
         {mensagem && (
-          <div className={`mb-6 p-4 rounded-2xl flex items-center gap-3 animate-in slide-in-from-top duration-300 ${
-            mensagem.includes('Alerta')
-              ? 'bg-gradient-to-r from-yellow-50 to-yellow-50 border border-yellow-200 text-yellow-800'
-              : 'bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 text-emerald-900'
+          <div className={`mb-6 p-4 rounded-2xl flex items-center gap-3 animate-in slide-in-from-top ${
+            mensagem.includes('Alerta') 
+              ? 'bg-yellow-50 border border-yellow-200 text-yellow-800' 
+              : 'bg-green-50 border border-green-200 text-emerald-900'
           }`}>
             <CheckCircle className="w-6 h-6 flex-shrink-0" />
             <span className="font-semibold">{mensagem}</span>
           </div>
         )}
 
-        {/* Main Content - Desktop: 2 colunas, Mobile: 1 coluna */}
+        {/* FORMULÁRIO */}
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-8">
           
-          {/* Coluna Esquerda - Formulário Principal */}
           <div className="md:col-span-2 space-y-6">
-            
-            {/* Card de Seleção de Localização */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow">
+            {/* 1. SELEÇÃO */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <Building className={`w-5 h-5 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-yellow-700'}`} />
-                Localização do Medidor de {tipoAtivo === 'agua' ? 'Água' : 'Energia'}
+                <Search className="w-5 h-5 text-gray-500" /> Identificação
               </h2>
-              
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {/* Unidade */}
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">
-                    Unidade (Prédio)
-                  </label>
-                  <CustomSelect
-                    value={predioSelecionado}
-                    onChange={(val) => {
-                      setPredioSelecionado(val)
-                      setAndarSelecionado('')
-                      setMedidorSelecionado('')
-                    }}
-                    options={prediosUnicos.map(p => ({ value: p, label: p }))}
-                    placeholder="Selecione..."
-                    icon={Building}
+                  <label className="block text-sm font-semibold text-gray-700">Unidade</label>
+                  <CustomSelect 
+                    value={predioSelecionado} 
+                    onChange={(val) => { setPredioSelecionado(val); setAndarSelecionado(''); setMedidorSelecionado('') }} 
+                    options={prediosUnicos.map(p => ({ value: p, label: p }))} 
+                    placeholder="Selecione..." 
+                    icon={Building} 
                   />
                 </div>
-
-                {/* Andar */}
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">
-                    Andar / Setor
-                  </label>
-                  <CustomSelect
-                    value={andarSelecionado}
-                    onChange={(val) => {
-                      setAndarSelecionado(val)
-                      setMedidorSelecionado('')
-                    }}
-                    options={andaresOpcoes.map(a => ({ value: a.valor, label: a.label }))}
-                    placeholder="Selecione..."
-                    disabled={!predioSelecionado}
-                    icon={MapPin}
+                  <label className="block text-sm font-semibold text-gray-700">Andar</label>
+                  <CustomSelect 
+                    value={andarSelecionado} 
+                    onChange={(val) => { setAndarSelecionado(val); setMedidorSelecionado('') }} 
+                    options={andaresOpcoes.map(a => ({ value: a.valor, label: a.label }))} 
+                    placeholder="Selecione..." 
+                    disabled={!predioSelecionado} 
+                    icon={MapPin} 
                   />
                 </div>
-
-                {/* Medidor */}
                 <div className="space-y-2 sm:col-span-2 md:col-span-1">
-                  <label className="block text-sm font-semibold text-gray-700">
-                    Medidor
-                  </label>
-                  <CustomSelect
-                    value={medidorSelecionado}
-                    onChange={(val) => setMedidorSelecionado(val)}
-                    options={medidoresFinais.map(m => ({ value: m.id, label: m.nome }))}
-                    placeholder="Qual medidor?"
-                    disabled={!andarSelecionado}
+                  <label className="block text-sm font-semibold text-gray-700">Medidor</label>
+                  <CustomSelect 
+                    value={medidorSelecionado} 
+                    onChange={(val) => setMedidorSelecionado(val)} 
+                    options={medidoresFinais.map(m => ({ value: m.id, label: m.nome }))} 
+                    placeholder="Qual medidor?" 
+                    disabled={!andarSelecionado} 
                   />
                 </div>
               </div>
             </div>
 
-            {/* Card de Leitura */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow">
-                  <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <TrendingUp className={`w-5 h-5 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-yellow-700'}`} />
-                Valor da Leitura {tipoAtivo === 'agua' ? '(m³)' : '(kWh)'}
+            {/* 2. LEITURA */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-gray-500" /> Valor ({tipoAtivo === 'agua' ? 'm³' : 'kWh'})
               </h2>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Digite o valor atual do medidor
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className={`w-full px-6 py-5 text-3xl font-black tracking-wider rounded-xl focus:outline-none transition-all ${
-                      !medidorSelecionado
-                        ? 'bg-gray-100 border-2 border-gray-200 text-gray-400 cursor-not-allowed'
-                        : isMenorQueAnterior || isConsumoAlto
-                        ? 'bg-red-50 border-2 border-red-400 text-red-600 focus:border-red-500'
-                        : `bg-gray-50 border-2 border-gray-300 text-gray-900 ${tipoAtivo === 'agua' ? 'focus:border-blue-500' : 'focus:border-yellow-300'}`
-                    }`}
-                    placeholder="00000"
-                    value={leituraAtual}
-                    onChange={(e) => {
-                      setLeituraAtual(e.target.value)
-                      if (Number(e.target.value) >= leituraAnterior) setMotivoValidacao('')
-                    }}
-                    disabled={!medidorSelecionado}
-                  />
-                </div>
-
-                {/* Alertas de Validação */}
-                {isMenorQueAnterior && (
-                  <div className="bg-gradient-to-r from-red-50 to-yellow-50 border-2 border-red-200 rounded-xl p-5">
-                    <div className="flex items-start gap-3 mb-4">
-                      <AlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <h4 className="font-bold text-red-900 mb-1">Atenção: Valor Menor</h4>
-                        <p className="text-sm text-red-700">O valor informado é menor que a leitura anterior. Por favor, explique o motivo:</p>
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <label className="flex items-center gap-3 p-3 bg-white rounded-lg border-2 border-gray-200 cursor-pointer hover:border-red-400 transition-colors">
-                        <input
-                          type="radio"
-                          name="motivo"
-                          checked={motivoValidacao === 'virada'}
-                          onChange={() => setMotivoValidacao('virada')}
-                          className="w-5 h-5 text-red-600"
-                        />
-                        <span className="text-sm font-medium text-gray-900">Relógio Virou (Zerou)</span>
-                      </label>
-                      <label className="flex items-center gap-3 p-3 bg-white rounded-lg border-2 border-gray-200 cursor-pointer hover:border-red-400 transition-colors">
-                        <input
-                          type="radio"
-                          name="motivo"
-                          checked={motivoValidacao === 'ajuste'}
-                          onChange={() => setMotivoValidacao('ajuste')}
-                          className="w-5 h-5 text-red-600"
-                        />
-                        <span className="text-sm font-medium text-gray-900">Ajuste / Correção Manual</span>
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {isConsumoAlto && (
-                  <div className="bg-gradient-to-r from-yellow-50 to-yellow-50 border-2 border-yellow-300 rounded-xl p-5 flex items-start gap-3">
-                    <TrendingUp className="w-6 h-6 text-yellow-700 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <h4 className="font-bold text-yellow-800 mb-1">Consumo Elevado Detectado</h4>
-                      <p className="text-sm text-yellow-700">
-                        O consumo de <span className="font-bold">{consumo}</span> está{' '}
-                        <span className="font-bold">{Math.round(((consumo/mediaHistorica)-1)*100)}%</span> acima da média histórica.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Card de Foto */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow">
-              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <Camera className={`w-5 h-5 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-yellow-700'}`} />
-                Evidência Fotográfica
-              </h2>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handleFileSelect}
-                className="hidden"
+              <input 
+                type="number" 
+                step="0.01" 
+                className={`w-full px-6 py-5 text-3xl font-black tracking-wider rounded-xl focus:outline-none transition-all ${
+                  !medidorSelecionado 
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                    : isMenorQueAnterior || isConsumoAlto 
+                    ? 'bg-red-50 border-2 border-red-400 text-red-600' 
+                    : 'bg-gray-50 border-2 border-gray-300 text-gray-900'
+                }`} 
+                placeholder="00000" 
+                value={leituraAtual} 
+                onChange={(e) => { 
+                  setLeituraAtual(e.target.value); 
+                  if (Number(e.target.value) >= leituraAnterior) setMotivoValidacao('') 
+                }} 
+                disabled={!medidorSelecionado} 
               />
-
-              {!previewUrl ? (
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={!leituraAtual}
-                  className={`w-full py-12 border-3 border-dashed rounded-xl transition-all flex flex-col items-center justify-center gap-3 ${
-                      !leituraAtual
-                        ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
-                        : tipoAtivo === 'agua'
-                        ? 'border-gray-300 bg-gradient-to-br from-gray-50 to-white hover:border-blue-400 hover:bg-blue-50 text-gray-700 hover:text-blue-700'
-                        : 'border-gray-300 bg-gradient-to-br from-gray-50 to-white hover:border-yellow-300 hover:bg-yellow-50 text-gray-700 hover:text-yellow-700'
-                    }`}
-                >
-                  <Camera className="w-12 h-12" />
-                  <div className="text-center">
-                    <div className="font-bold text-lg">Tirar Foto do Medidor</div>
-                    <div className="text-sm text-gray-500 mt-1">Clique para abrir a câmera</div>
+               
+               {isMenorQueAnterior && (
+                  <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-4">
+                    <div className="flex items-center gap-2 text-red-800 font-bold mb-2">
+                      <AlertTriangle className="w-5 h-5" /> Valor Menor que Anterior
+                    </div>
+                    <div className="flex gap-4">
+                       <label className="flex items-center gap-2 cursor-pointer">
+                         <input type="radio" name="motivo" onChange={() => setMotivoValidacao('virada')} className="accent-red-600 w-5 h-5" />
+                         <span className="text-sm">Relógio Virou</span>
+                       </label>
+                       <label className="flex items-center gap-2 cursor-pointer">
+                         <input type="radio" name="motivo" onChange={() => setMotivoValidacao('ajuste')} className="accent-red-600 w-5 h-5" />
+                         <span className="text-sm">Correção Manual</span>
+                       </label>
+                    </div>
                   </div>
+                )}
+            </div>
+
+            {/* 3. FOTO */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <Camera className="w-5 h-5 text-gray-500" /> Evidência
+              </h2>
+              <input 
+                ref={fileInputRef} 
+                type="file" 
+                accept="image/*" 
+                capture="environment" 
+                onChange={handleFileSelect} 
+                className="hidden" 
+              />
+              {!previewUrl ? (
+                <button 
+                  type="button" 
+                  onClick={() => fileInputRef.current?.click()} 
+                  disabled={!leituraAtual} 
+                  className={`w-full py-12 border-3 border-dashed rounded-xl transition-all flex flex-col items-center justify-center gap-3 ${
+                    !leituraAtual 
+                      ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed' 
+                      : 'border-gray-300 bg-gray-50 hover:bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  <Camera className="w-10 h-10 mb-1 opacity-50" />
+                  <span className="font-bold">Tirar Foto</span>
                 </button>
               ) : (
-                <div className="relative rounded-xl overflow-hidden border-2 border-gray-200 shadow-md group">
-                  <img src={previewUrl} alt="Preview" className="w-full h-64 object-cover" />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all" />
-                  <button
-                    type="button"
-                    onClick={() => { setFoto(null); setPreviewUrl(null) }}
-                    className="absolute top-4 right-4 p-3 bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-lg transition-all hover:scale-110"
+                <div className="relative rounded-xl overflow-hidden border border-gray-200 h-64">
+                  <img src={previewUrl} className="w-full h-full object-cover" alt="Evidência" />
+                  <button 
+                    onClick={() => {setFoto(null); setPreviewUrl(null)}} 
+                    className="absolute top-2 right-2 p-2 bg-red-600 text-white rounded-full shadow-lg"
                   >
                     <Trash2 className="w-5 h-5" />
                   </button>
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
-                    <p className="text-white font-semibold flex items-center gap-2">
-                      <CheckCircle className="w-5 h-5" />
-                      Foto capturada com sucesso
-                    </p>
-                  </div>
                 </div>
               )}
             </div>
-
-            {/* Botão de Envio - Mobile */}
-            <div className="md:hidden">
-              <button
-                type="submit"
-                disabled={loading || !podeEnviar}
-                className={`w-full py-5 rounded-xl font-bold text-lg shadow-2xl transition-all transform hover:scale-[1.02] active:scale-[0.98] ${
-                  !podeEnviar
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : isConsumoAlto || isMenorQueAnterior
-                    ? 'bg-gradient-to-r from-yellow-500 to-red-600 text-white shadow-yellow-300/50 hover:shadow-2xl'
-                    : tipoAtivo === 'agua'
-                    ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-blue-500/50 hover:shadow-2xl'
-                    : 'bg-gradient-to-r from-yellow-500 to-yellow-500 text-white shadow-yellow-300/50 hover:shadow-2xl'
-                }`}
-              >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Salvando...
-                  </span>
-                ) : (
-                  <span className="flex items-center justify-center gap-2">
-                    <CheckCircle className="w-6 h-6" />
-                    Confirmar Leitura
-                  </span>
-                )}
-              </button>
-            </div>
+            
+            {/* BOTÃO MOBILE */}
+            <button 
+              type="submit" 
+              disabled={loading || !podeEnviar} 
+              className={`md:hidden w-full py-5 rounded-xl font-bold text-lg shadow-xl text-white mb-20 ${
+                !podeEnviar 
+                  ? 'bg-gray-300' 
+                  : tipoAtivo === 'agua' ? 'bg-blue-600' : 'bg-yellow-500'
+              }`}
+            >
+              {loading ? 'Salvando...' : 'Confirmar Leitura'}
+            </button>
           </div>
 
-          {/* Coluna Direita - Sidebar de Informações (Desktop) */}
-          <div className="md:col-span-1 space-y-6">
-            
-            {/* Card de Informações Técnicas */}
+          {/* SIDEBAR RESUMO (DESKTOP) */}
+          <div className="hidden md:block col-span-1 space-y-6">
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 sticky top-8">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Dados Técnicos</h3>
-              
+              <h3 className="font-bold text-gray-900 mb-4">Resumo</h3>
               <div className="space-y-4">
-                {/* Leitura Anterior */}
-                <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 border border-gray-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Leitura Anterior</span>
-                    <Info className="w-4 h-4 text-gray-400" />
-                  </div>
-                  <div className="text-3xl font-black text-gray-900">
-                    {leituraAnterior !== null ? leituraAnterior.toLocaleString() : '—'}
-                  </div>
-                </div>
-
-                {/* Média Histórica */}
-                <div className={`bg-gradient-to-br ${tipoAtivo === 'agua' ? 'from-blue-50 to-cyan-50 border-blue-200' : 'from-yellow-50 to-yellow-50 border-yellow-200'} rounded-xl p-4 border`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className={`text-xs font-semibold ${tipoAtivo === 'agua' ? 'text-blue-700' : 'text-yellow-700'} uppercase tracking-wide`}>Média Histórica</span>
-                    <TrendingUp className={`w-4 h-4 ${tipoAtivo === 'agua' ? 'text-blue-600' : 'text-yellow-700'}`} />
-                  </div>
-                  <div className={`text-3xl font-black ${tipoAtivo === 'agua' ? 'text-blue-900' : 'text-yellow-800'}`}>
-                    {mediaHistorica ? Math.round(mediaHistorica).toLocaleString() : '—'}
-                  </div>
-                </div>
-
-                {/* Consumo Calculado */}
-                {leituraAtual && (
-                  <div className={`bg-gradient-to-br rounded-xl p-4 border-2 ${
-                    isConsumoAlto
-                      ? 'from-yellow-50 to-red-50 border-yellow-300'
-                      : 'from-emerald-50 to-green-50 border-emerald-300'
-                  }`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className={`text-xs font-semibold uppercase tracking-wide ${
-                        isConsumoAlto ? 'text-yellow-700' : 'text-emerald-700'
-                      }`}>
-                        Consumo Atual
-                      </span>
-                      <TrendingUp className={`w-4 h-4 ${isConsumoAlto ? 'text-yellow-700' : 'text-emerald-600'}`} />
-                    </div>
-                    <div className={`text-3xl font-black ${
-                      isConsumoAlto ? 'text-yellow-800' : 'text-emerald-900'
-                    }`}>
-                      {consumo >= 0 ? consumo.toLocaleString() : '—'}
-                    </div>
-                    {mediaHistorica && consumo > 0 && (
-                      <div className="mt-2 text-xs font-medium text-gray-600">
-                        {consumo > mediaHistorica
-                          ? `+${Math.round(((consumo/mediaHistorica)-1)*100)}% vs média`
-                          : `${Math.round(((consumo/mediaHistorica)-1)*100)}% vs média`
-                        }
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Botão de Envio - Desktop */}
-              <div className="mt-6 hidden md:block">
-                <button
-                  type="submit"
-                  disabled={loading || !podeEnviar}
-                  className={`w-full py-4 rounded-xl font-bold text-base shadow-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] ${
-                    !podeEnviar
-                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      : isConsumoAlto || isMenorQueAnterior
-                      ? 'bg-gradient-to-r from-yellow-500 to-red-600 text-white shadow-yellow-300/50 hover:shadow-2xl'
-                      : tipoAtivo === 'agua'
-                      ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-blue-500/50 hover:shadow-2xl'
-                      : 'bg-gradient-to-r from-yellow-500 to-yellow-500 text-white shadow-yellow-300/50 hover:shadow-2xl'
+                 <div className="p-4 bg-gray-50 rounded-xl">
+                   <p className="text-xs text-gray-500 uppercase">Leitura Anterior</p>
+                   <p className="text-2xl font-bold text-gray-800">{leituraAnterior}</p>
+                 </div>
+                 {leituraAtual && (
+                   <div className={`p-4 rounded-xl border ${isConsumoAlto ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                     <p className={`text-xs uppercase ${isConsumoAlto ? 'text-red-600' : 'text-green-600'}`}>Consumo</p>
+                     <p className={`text-3xl font-black ${isConsumoAlto ? 'text-red-700' : 'text-green-700'}`}>{consumo}</p>
+                   </div>
+                 )}
+                 <button 
+                  type="submit" 
+                  disabled={loading || !podeEnviar} 
+                  className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-transform hover:scale-105 ${
+                    !podeEnviar 
+                      ? 'bg-gray-300 cursor-not-allowed' 
+                      : tipoAtivo === 'agua' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-yellow-500 hover:bg-yellow-600'
                   }`}
                 >
-                  {loading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Salvando...
-                    </span>
-                  ) : (
-                    <span className="flex items-center justify-center gap-2">
-                      <CheckCircle className="w-5 h-5" />
-                      Confirmar
-                    </span>
-                  )}
+                  {loading ? 'Salvando...' : 'Confirmar'}
                 </button>
               </div>
-            </div>
-
-            {/* Card de Ajuda */}
-            <div className={`hidden md:block bg-gradient-to-br ${tipoAtivo === 'agua' ? 'from-blue-50 to-cyan-50 border-blue-200' : 'from-yellow-50 to-yellow-50 border-yellow-200'} rounded-2xl shadow-lg border p-6`}>
-              <h3 className={`text-lg font-bold ${tipoAtivo === 'agua' ? 'text-blue-900' : 'text-yellow-800'} mb-3 flex items-center gap-2`}>
-                <Info className="w-5 h-5" />
-                Dica
-              </h3>
-              <p className={`text-sm ${tipoAtivo === 'agua' ? 'text-blue-800' : 'text-yellow-700'} leading-relaxed`}>
-                Tire uma foto clara do medidor, garantindo que todos os dígitos estejam visíveis. 
-                Isso ajuda na auditoria posterior e comprova o valor registrado.
-              </p>
             </div>
           </div>
         </form>
