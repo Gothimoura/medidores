@@ -1,11 +1,20 @@
-import { Outlet } from 'react-router-dom'
+import { Outlet, useNavigate } from 'react-router-dom' // <--- useNavigate adicionado
 import { useTheme } from '../contexts/ThemeContext'
+import { useAuth } from '../contexts/AuthContext' // <--- useAuth adicionado
+import { LogOut } from 'lucide-react' // <--- Ícone novo
 import BottomMenu from './BottomMenu'
 import ChuvaAnimation from './ChuvaAnimation'
 import RaiosAnimation from './RaiosAnimation'
 
 export default function Layout() {
   const { tipoAtivo } = useTheme()
+  const { logout, user } = useAuth() // <--- Pega função de logout e dados do usuário
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    logout() // Limpa o token e o estado
+    navigate('/login') // Força a ida para o login
+  }
 
   return (
     <div className={`min-h-screen transition-all md:pb-0 pb-24 ${
@@ -33,15 +42,31 @@ export default function Layout() {
             <p className={`text-xs sm:text-sm uppercase tracking-wider mt-1 transition-colors ${
               tipoAtivo === 'agua' ? 'text-white opacity-90' : 'text-yellow-800 opacity-90'
             }`}>
-              Gestão de Utilidades
+              {user?.nome || 'Gestão de Utilidades'} {/* Mostra o nome da equipe logada */}
             </p>
           </div>
-          <div className={`text-xs sm:text-sm px-4 py-2 rounded-full font-semibold transition-all ${
-            tipoAtivo === 'agua'
-              ? 'bg-white/20 text-white hover:bg-white/30'
-              : 'bg-yellow-600/20 text-yellow-800 hover:bg-yellow-700/30'
-          }`}>
-            Admin
+
+          <div className="flex items-center gap-3">
+            <div className={`text-xs sm:text-sm px-4 py-2 rounded-full font-semibold transition-all hidden sm:block ${
+              tipoAtivo === 'agua'
+                ? 'bg-white/20 text-white'
+                : 'bg-yellow-600/20 text-yellow-800'
+            }`}>
+              {user?.role === 'n1' ? 'Operacional' : 'Admin'}
+            </div>
+
+            {/* BOTÃO DE SAIR */}
+            <button 
+              onClick={handleLogout}
+              className={`p-2 rounded-full transition-all hover:scale-110 ${
+                tipoAtivo === 'agua'
+                  ? 'bg-white/20 text-white hover:bg-white/30'
+                  : 'bg-yellow-600/20 text-yellow-900 hover:bg-yellow-700/30'
+              }`}
+              title="Sair do sistema"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
           </div>
         </div>
       </header>
