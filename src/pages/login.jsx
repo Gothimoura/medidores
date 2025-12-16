@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Scanner } from '@yudiel/react-qr-scanner'
 import { Zap, QrCode, X } from 'lucide-react'
+import MixedAnimation from '../components/MixedAnimation'
 
 export default function Login() {
   const { loginViaQrCode } = useAuth()
@@ -32,8 +33,11 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden relative">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Animação Mista - Chuva + Raios */}
+      <MixedAnimation />
+      
+      <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden relative z-10">
         
         {/* Header Visual */}
         <div className="bg-gradient-to-r from-blue-600 to-cyan-500 p-8 text-center">
