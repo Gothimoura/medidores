@@ -24,8 +24,12 @@ export default function Historico() {
   const [termoBusca, setTermoBusca] = useState('')
   const [filtroUnidade, setFiltroUnidade] = useState('')
   const [filtroAndar, setFiltroAndar] = useState('')
+  
+  // Filtros de Data
+  const [dataInicio, setDataInicio] = useState('')
+  const [dataFim, setDataFim] = useState('')
 
-  // Listas para os Selects (Filtros)
+  // Listas para os Selects
   const [opcoesUnidades, setOpcoesUnidades] = useState([])
   const [opcoesAndares, setOpcoesAndares] = useState([])
 
@@ -35,25 +39,38 @@ export default function Historico() {
   // Carregar Dados
   useEffect(() => {
     fetchLeituras()
-  }, [tipoAtivo, paginaAtual, filtroUnidade, filtroAndar, termoBusca])
+  }, [tipoAtivo, paginaAtual, filtroUnidade, filtroAndar, termoBusca, dataInicio, dataFim])
 
   async function fetchLeituras() {
     setLoading(true)
     
-    // Seleciona a tabela correta baseada no tema
     const tabela = tipoAtivo === 'agua' ? 'hidrometros' : 'energia'
-    const colunaLeitura = tipoAtivo === 'agua' ? 'leitura_hidrometro' : 'leitura_energia'
-    const colunaConsumo = tipoAtivo === 'agua' ? 'gasto_diario' : 'variacao'
 
     let query = supabase
       .from(tabela)
       .select('*', { count: 'exact' })
       .order('data_hora', { ascending: false })
 
-    // Filtros
+    // Filtros de Texto e Select
     if (filtroUnidade) query = query.eq('unidade', filtroUnidade)
     if (filtroAndar) query = query.eq('andar', filtroAndar)
     if (termoBusca) query = query.ilike('identificador_relogio', `%${termoBusca}%`)
+
+    // --- CORREÇÃO DO FILTRO DE DATA ---
+    if (dataInicio) {
+      query = query.gte('data_hora', `${dataInicio}T00:00:00`)
+    }
+    
+    if (dataFim) {
+      // Truque para Fuso Horário: 
+      // Pegamos a data fim, adicionamos 1 dia e buscamos até às 04:00 da manhã do dia seguinte.
+      // Isso cobre o UTC-3 (Brasil) sem pegar registros reais do próximo dia (que seriam > 08:00 UTC).
+      const dataLimite = new Date(dataFim)
+      dataLimite.setDate(dataLimite.getDate() + 1)
+      const dataLimiteStr = dataLimite.toISOString().split('T')[0]
+      
+      query = query.lte('data_hora', `${dataLimiteStr}T04:00:00`)
+    }
 
     // Paginação
     const de = (paginaAtual - 1) * ITENS_POR_PAGINA
@@ -68,8 +85,7 @@ export default function Historico() {
       setLeituras(data)
       setTotalRegistros(count)
       
-      // Extrai opções únicas para os filtros
-      if (data.length > 0) {
+      if (opcoesUnidades.length === 0 && data.length > 0) {
         const unidades = [...new Set(data.map(i => i.unidade).filter(Boolean))].sort()
         setOpcoesUnidades(unidades.map(u => ({ value: u, label: u })))
         
@@ -80,14 +96,19 @@ export default function Historico() {
     setLoading(false)
   }
 
-  // Função auxiliar para deletar (apenas exemplo, idealmente restrito a admins)
   const handleDelete = async (id) => {
     if (!window.confirm('Tem certeza que deseja excluir este registro?')) return
-    
     const tabela = tipoAtivo === 'agua' ? 'hidrometros' : 'energia'
     const { error } = await supabase.from(tabela).delete().eq('id_registro', id)
-    
     if (!error) fetchLeituras()
+  }
+
+  const limparFiltros = () => {
+    setFiltroUnidade('')
+    setFiltroAndar('')
+    setTermoBusca('')
+    setDataInicio('')
+    setDataFim('')
   }
 
   return (
@@ -127,39 +148,67 @@ export default function Historico() {
         </div>
 
         {/* BARRA DE FILTROS */}
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
+        <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex flex-col lg:flex-row gap-4 items-end lg:items-center">
+          
+          <div className="flex-1 w-full relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input 
               type="text" 
-              placeholder="Buscar por nome do relógio..." 
+              placeholder="Buscar relógio..." 
               value={termoBusca}
               onChange={(e) => setTermoBusca(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
             />
           </div>
-          <div className="w-full md:w-48">
+
+          {/* Filtros de Data */}
+          <div className="flex gap-2 w-full lg:w-auto">
+            <div className="flex-1">
+              <label className="block text-[10px] uppercase font-bold text-gray-400 mb-1 ml-1">De</label>
+              <input 
+                type="date" 
+                value={dataInicio}
+                onChange={(e) => setDataInicio(e.target.value)}
+                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-[10px] uppercase font-bold text-gray-400 mb-1 ml-1">Até</label>
+              <input 
+                type="date" 
+                value={dataFim}
+                onChange={(e) => setDataFim(e.target.value)}
+                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          {/* Selects */}
+          <div className="w-full lg:w-40">
+            <label className="block text-[10px] uppercase font-bold text-gray-400 mb-1 ml-1">Unidade</label>
             <CustomSelect 
               options={opcoesUnidades} 
               value={filtroUnidade} 
               onChange={setFiltroUnidade} 
-              placeholder="Unidade"
+              placeholder="Todas"
               icon={Building}
             />
           </div>
-          <div className="w-full md:w-48">
+          <div className="w-full lg:w-40">
+            <label className="block text-[10px] uppercase font-bold text-gray-400 mb-1 ml-1">Andar</label>
             <CustomSelect 
               options={opcoesAndares} 
               value={filtroAndar} 
               onChange={setFiltroAndar} 
-              placeholder="Andar"
+              placeholder="Todos"
               icon={MapPin}
             />
           </div>
-          {(filtroUnidade || filtroAndar || termoBusca) && (
+
+          {(filtroUnidade || filtroAndar || termoBusca || dataInicio || dataFim) && (
             <button 
-              onClick={() => { setFiltroUnidade(''); setFiltroAndar(''); setTermoBusca('') }}
-              className="px-4 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-xl text-sm font-semibold transition-colors"
+              onClick={limparFiltros}
+              className="px-4 py-3 text-red-600 bg-red-50 hover:bg-red-100 rounded-xl text-sm font-semibold transition-colors h-[46px] mt-auto"
             >
               Limpar
             </button>
@@ -188,7 +237,7 @@ export default function Historico() {
                   </tr>
                 ) : leituras.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="p-8 text-center text-gray-400">Nenhum registro encontrado.</td>
+                    <td colSpan="7" className="p-8 text-center text-gray-400">Nenhum registro encontrado com estes filtros.</td>
                   </tr>
                 ) : (
                   leituras.map((item) => {
@@ -198,8 +247,6 @@ export default function Historico() {
 
                     return (
                       <tr key={item.id_registro} className={`hover:bg-gray-50 transition-colors ${isAlerta ? 'bg-red-50/30' : ''}`}>
-                        
-                        {/* Status (Alerta ou Normal) */}
                         <td className="p-4">
                           {isAlerta ? (
                             <div className="flex items-center gap-1 text-red-600 bg-red-100 px-2 py-1 rounded-full w-fit text-[10px] font-bold uppercase">
@@ -211,8 +258,6 @@ export default function Historico() {
                             </div>
                           )}
                         </td>
-
-                        {/* Data */}
                         <td className="p-4 text-sm text-gray-600 whitespace-nowrap">
                           <div className="flex items-center gap-2">
                             <Calendar className="w-4 h-4 text-gray-400" />
@@ -220,27 +265,19 @@ export default function Historico() {
                             <span className="text-xs text-gray-400">{new Date(item.data_hora).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}</span>
                           </div>
                         </td>
-
-                        {/* Local */}
                         <td className="p-4">
                           <div className="font-medium text-gray-900">{item.unidade}</div>
                           <div className="text-xs text-gray-500">{item.andar || 'Sem andar'} • {item.identificador_relogio}</div>
                         </td>
-
-                        {/* Leitura Atual */}
                         <td className="p-4 text-right font-mono font-medium text-gray-700">
                           {Number(leitura).toLocaleString('pt-BR')}
                         </td>
-
-                        {/* Consumo Calculado */}
                         <td className="p-4 text-right">
                           <span className={`font-mono font-bold ${isAlerta ? 'text-red-600' : 'text-emerald-600'}`}>
                             {consumo ? Number(consumo).toLocaleString('pt-BR') : '-'}
                           </span>
                           <span className="text-[10px] text-gray-400 ml-1">{tipoAtivo === 'agua' ? 'm³' : 'kWh'}</span>
                         </td>
-
-                        {/* Evidência (Foto) */}
                         <td className="p-4 text-center">
                           {item.foto_url ? (
                             <a href={item.foto_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs font-medium bg-blue-50 px-2 py-1 rounded-lg transition-colors">
@@ -250,12 +287,8 @@ export default function Historico() {
                             <span className="text-gray-300 text-xs">-</span>
                           )}
                         </td>
-
-                        {/* Ações (Justificativa e Exclusão) */}
                         <td className="p-4 text-center">
                           <div className="flex items-center justify-center gap-2">
-                            
-                            {/* Botão de Justificativa (Só aparece se tiver obs ou justificativa) */}
                             {(item.justificativa || item.observacao) && (
                               <button 
                                 onClick={() => setJustificativaModal({
@@ -268,16 +301,15 @@ export default function Historico() {
                                     ? 'text-red-600 bg-red-100 hover:bg-red-200 animate-pulse' 
                                     : 'text-gray-400 hover:bg-gray-100'
                                 }`}
-                                title="Ler Observação/Justificativa"
+                                title="Ler Observação"
                               >
                                 <MessageSquare className="w-4 h-4" />
                               </button>
                             )}
-
                             <button 
                               onClick={() => handleDelete(item.id_registro)}
                               className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"
-                              title="Excluir Registro"
+                              title="Excluir"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -291,10 +323,9 @@ export default function Historico() {
             </table>
           </div>
 
-          {/* Paginação */}
           <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 flex items-center justify-between">
             <span className="text-xs text-gray-500">
-              Mostrando página {paginaAtual} de {Math.ceil(totalRegistros / ITENS_POR_PAGINA)}
+              Mostrando página {paginaAtual} de {Math.max(1, Math.ceil(totalRegistros / ITENS_POR_PAGINA))}
             </span>
             <div className="flex gap-2">
               <button 
@@ -317,7 +348,6 @@ export default function Historico() {
 
       </div>
 
-      {/* MODAL DE JUSTIFICATIVA */}
       {justificativaModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in zoom-in-95">
@@ -330,7 +360,6 @@ export default function Historico() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
             <div className="space-y-4">
               {justificativaModal.obs && (
                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
@@ -338,7 +367,6 @@ export default function Historico() {
                   <p className="text-sm text-gray-800">{justificativaModal.obs}</p>
                 </div>
               )}
-
               {justificativaModal.texto ? (
                 <div className="bg-red-50 p-4 rounded-xl border border-red-100">
                   <p className="text-xs font-bold text-red-600 uppercase mb-1">Justificativa do Operador</p>
@@ -347,12 +375,10 @@ export default function Historico() {
               ) : (
                 <p className="text-sm text-gray-400 italic">Nenhuma justificativa manual foi inserida.</p>
               )}
-
               <div className="pt-4 border-t border-gray-100 flex justify-between text-xs text-gray-500">
                 <span>Registrado por: <strong>{justificativaModal.autor || 'Sistema'}</strong></span>
               </div>
             </div>
-
             <button 
               onClick={() => setJustificativaModal(null)}
               className="mt-6 w-full py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-gray-800 transition-colors"
@@ -362,7 +388,6 @@ export default function Historico() {
           </div>
         </div>
       )}
-
     </div>
   )
 }
