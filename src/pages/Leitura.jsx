@@ -45,7 +45,7 @@ export default function Leitura() {
   
   const fileInputRef = useRef(null)
 
-  // 1. Efeito para abrir o scanner automaticamente se vier da tela de Opções
+  // 1. Efeito para abrir o scanner via URL
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('scan') === 'true') {
@@ -77,7 +77,7 @@ export default function Leitura() {
     if (!result || result.length === 0) return
     
     const tokenLido = result[0].rawValue 
-    setMostrarScanner(false) // Fecha o scanner ao ler com sucesso
+    setMostrarScanner(false)
     setLoading(true)
 
     try {
@@ -182,7 +182,7 @@ export default function Leitura() {
     }
   }
 
-  // --- VALIDAÇÕES ---
+  // --- VALIDAÇÕES E CÁLCULOS ---
   const valorAtualNum = Number(leituraAtual)
   const valorAnteriorNum = Number(leituraAnterior)
   const consumo = leituraAtual ? valorAtualNum - valorAnteriorNum : 0
@@ -194,7 +194,7 @@ export default function Leitura() {
                      (!isMenorQueAnterior || motivoValidacao !== '') &&
                      (!isConsumoAlto || justificativa.length > 3)
 
-  // 5. Submit
+  // 5. Submit (ENVIO DOS DADOS COMPLETOS)
   async function handleSubmit(e) {
     e.preventDefault()
     if (!podeEnviar) return
@@ -234,10 +234,22 @@ export default function Leitura() {
         justificativa: isConsumoAlto ? justificativa : null
       }
 
+      // === AQUI ESTÁ A CORREÇÃO ===
+      // Agora salvamos a 'leitura anterior' e o 'gasto calculado' no banco
       if (tipoAtivo === 'agua') {
-        await supabase.from('hidrometros').insert({ ...dadosComuns, leitura_hidrometro: leituraAtual.toString() })
+        await supabase.from('hidrometros').insert({ 
+          ...dadosComuns, 
+          leitura_hidrometro: leituraAtual.toString(),
+          hidrometro_anterior: leituraAnterior?.toString(), // Salva a anterior
+          gasto_diario: consumo.toString()                  // Salva o cálculo (Delta)
+        })
       } else {
-        await supabase.from('energia').insert({ ...dadosComuns, leitura_energia: leituraAtual.toString() })
+        await supabase.from('energia').insert({ 
+          ...dadosComuns, 
+          leitura_energia: leituraAtual.toString(),
+          energia_anterior: leituraAnterior?.toString(),    // Salva a anterior
+          variacao: consumo.toString()                      // Salva o cálculo (Delta)
+        })
       }
       
       if (N8N_WEBHOOK_URL) {
@@ -247,6 +259,7 @@ export default function Leitura() {
           body: JSON.stringify({
             ...dadosComuns,
             leitura_atual: valorAtualNum,
+            leitura_anterior: valorAnteriorNum,
             consumo: consumo,
             alerta: isConsumoAlto || isMenorQueAnterior
           })
@@ -255,6 +268,7 @@ export default function Leitura() {
 
       setMensagem(isConsumoAlto ? 'Salvo com justificativa!' : 'Leitura salva com sucesso!')
       
+      // Limpeza
       setLeituraAtual('')
       setFoto(null)
       setPreviewUrl(null)
@@ -273,6 +287,7 @@ export default function Leitura() {
     }
   }
 
+  // Visual
   const currentStep = !predioSelecionado ? 1 : !andarSelecionado ? 2 : !medidorSelecionado ? 3 : !leituraAtual ? 4 : !foto ? 5 : 6
 
   return (
@@ -366,7 +381,7 @@ export default function Leitura() {
           </div>
         </div>
 
-        {/* MODAL SCANNER - CORRIGIDO AQUI */}
+        {/* MODAL SCANNER */}
         {mostrarScanner && (
           <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center p-4 animate-in fade-in">
             <div className="w-full max-w-sm relative">
@@ -379,7 +394,6 @@ export default function Leitura() {
                 />
               </div>
               
-              {/* BOTÃO CANCELAR: Agora redireciona para a raiz '/' */}
               <button 
                 onClick={() => navigate('/')} 
                 className="mt-6 w-full py-3 bg-white/20 border border-white/30 text-white rounded-xl font-bold backdrop-blur-sm"
@@ -409,6 +423,7 @@ export default function Leitura() {
           
           <div className="md:col-span-2 space-y-6">
             
+            {/* IDENTIFICAÇÃO */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <Search className="w-5 h-5 text-gray-500" /> Identificação
@@ -448,6 +463,7 @@ export default function Leitura() {
               </div>
             </div>
 
+            {/* LEITURA */}
             <div className={`rounded-2xl shadow-lg border p-6 transition-colors duration-300 ${
                isConsumoAlto ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'
             }`}>
@@ -520,6 +536,7 @@ export default function Leitura() {
                 )}
             </div>
 
+            {/* FOTO */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <Camera className="w-5 h-5 text-gray-500" /> Evidência Fotográfica
@@ -572,6 +589,7 @@ export default function Leitura() {
               )}
             </div>
             
+            {/* BOTÃO MOBILE */}
             <button
                 type="submit"
                 disabled={loading || !podeEnviar}
@@ -586,6 +604,7 @@ export default function Leitura() {
 
           </div>
 
+          {/* RESUMO FIXO DESKTOP */}
           <div className="hidden md:block col-span-1 space-y-6">
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 sticky top-8">
               <h3 className="font-bold text-xl text-gray-900 mb-6 flex items-center gap-2">
