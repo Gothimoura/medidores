@@ -157,12 +157,27 @@ export default function Leitura() {
 
       const viewAlvo = tipoAtivo === 'agua' ? 'view_hidrometros_calculada' : 'view_energia_calculada'
 
-      const { data: historico } = await supabase
+      const tenDaysAgo = new Date()
+      tenDaysAgo.setDate(tenDaysAgo.getDate() - 10)
+
+      // Prioriza busca nos últimos 10 dias
+      let { data: historico } = await supabase
         .from(viewAlvo)
         .select('leitura_num, consumo_calculado')
         .eq('identificador_relogio', nomeMedidor)
+        .gte('data_real', tenDaysAgo.toISOString())
         .order('data_real', { ascending: false })
-        .limit(10) // Pega as últimas 10 leituras para média
+
+      // Se não houver dados recentes, busca os últimos 10 registros como fallback
+      if (!historico || historico.length === 0) {
+        const { data: fallbackHistorico } = await supabase
+          .from(viewAlvo)
+          .select('leitura_num, consumo_calculado')
+          .eq('identificador_relogio', nomeMedidor)
+          .order('data_real', { ascending: false })
+          .limit(10)
+        historico = fallbackHistorico
+      }
 
       if (historico && historico.length > 0) {
         setLeituraAnterior(historico[0].leitura_num || 0)
@@ -566,9 +581,9 @@ export default function Leitura() {
                    <p className="text-2xl font-bold text-gray-800">{leituraAnterior}</p>
                  </div>
                  {leituraAtual && (
-                   <div className={`p-4 rounded-xl border ${isConsumoAlto ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
-                     <p className={`text-xs uppercase ${isConsumoAlto ? 'text-red-600' : 'text-green-600'}`}>Consumo</p>
-                     <p className={`text-3xl font-black ${isConsumoAlto ? 'text-red-700' : 'text-green-700'}`}>{consumo}</p>
+                   <div className={`p-4 rounded-xl border ${isMenorQueAnterior || isConsumoAlto ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                     <p className={`text-xs uppercase ${isMenorQueAnterior || isConsumoAlto ? 'text-red-600' : 'text-green-600'}`}>Consumo</p>
+                     <p className={`text-3xl font-black ${isMenorQueAnterior || isConsumoAlto ? 'text-red-700' : 'text-green-700'}`}>{consumo}</p>
                    </div>
                  )}
                  <button 
