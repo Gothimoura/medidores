@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { supabase } from '../supabaseClient'
 import { Scanner } from '@yudiel/react-qr-scanner'
@@ -12,10 +12,11 @@ import CustomSelect from '../components/CustomSelect'
 
 // --- CONFIGURAÇÕES DO SISTEMA ---
 const N8N_WEBHOOK_URL = '' 
-const PORCENTAGEM_ALERTA = 0.60 // 60% (Se o consumo for 60% maior que a média, pede justificativa)
+const PORCENTAGEM_ALERTA = 0.60 
 const VALOR_SEM_ANDAR = '___SEM_ANDAR___'
 
 export default function Leitura() {
+  const navigate = useNavigate()
   const { tipoAtivo, setTipoAtivo } = useTheme()
   const [todosMedidores, setTodosMedidores] = useState([])
   
@@ -27,7 +28,7 @@ export default function Leitura() {
   // Estados da Leitura e Validação
   const [leituraAnterior, setLeituraAnterior] = useState(null)
   const [leituraAtual, setLeituraAtual] = useState('')
-  const [mediaHistorica, setMediaHistorica] = useState(null) // Média dos últimos 10 dias
+  const [mediaHistorica, setMediaHistorica] = useState(null)
   
   // Estados de Foto e Upload
   const [foto, setFoto] = useState(null)
@@ -36,18 +37,25 @@ export default function Leitura() {
   const [mensagem, setMensagem] = useState(null)
   
   // Estados de Exceção (Justificativas)
-  const [motivoValidacao, setMotivoValidacao] = useState('') // Para virada de relógio
-  const [justificativa, setJustificativa] = useState('')     // Para consumo excessivo
+  const [motivoValidacao, setMotivoValidacao] = useState('') 
+  const [justificativa, setJustificativa] = useState('')     
   
   // Controle do Scanner
   const [mostrarScanner, setMostrarScanner] = useState(false)
   
   const fileInputRef = useRef(null)
 
-  // 1. Carrega todos os medidores do tipo ativo (Agua/Energia)
+  // 1. Efeito para abrir o scanner automaticamente se vier da tela de Opções
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('scan') === 'true') {
+      setMostrarScanner(true);
+    }
+  }, []);
+
+  // 2. Carrega todos os medidores
   useEffect(() => {
     async function fetchMedidores() {
-      // Se não tem medidor selecionado via QR Code, reseta filtros
       if (!medidorSelecionado) {
         setPredioSelecionado('')
         setAndarSelecionado('')
@@ -64,16 +72,15 @@ export default function Leitura() {
     fetchMedidores()
   }, [tipoAtivo])
 
-  // 2. Lógica do Scanner (Lê o UUID e preenche tudo)
+  // 3. Lógica do Scanner
   const handleMedidorScan = async (result) => {
     if (!result || result.length === 0) return
     
-    const tokenLido = result[0].rawValue // O UUID do relógio
-    setMostrarScanner(false)
+    const tokenLido = result[0].rawValue 
+    setMostrarScanner(false) // Fecha o scanner ao ler com sucesso
     setLoading(true)
 
     try {
-      // Busca o medidor pelo TOKEN único
       const { data: medidor, error } = await supabase
         .from('medidores')
         .select('*')
@@ -84,13 +91,11 @@ export default function Leitura() {
         throw new Error('QR Code não cadastrado ou medidor não encontrado.')
       }
 
-      // Se o medidor for de outro tipo, troca o tema sozinho
       if (medidor.tipo !== tipoAtivo) {
         setTipoAtivo(medidor.tipo)
-        await new Promise(r => setTimeout(r, 200)) // Delay p/ atualizar estado
+        await new Promise(r => setTimeout(r, 200)) 
       }
 
-      // Preenche os campos automaticamente
       setPredioSelecionado(medidor.local_unidade)
       setAndarSelecionado(medidor.andar || VALOR_SEM_ANDAR)
       setMedidorSelecionado(medidor.id)
@@ -105,7 +110,7 @@ export default function Leitura() {
     }
   }
 
-  // --- LÓGICA DE FILTROS DOS SELECTS ---
+  // --- LÓGICA DE FILTROS ---
   const prediosUnicos = [...new Set(todosMedidores.map(m => m.local_unidade).filter(Boolean))].sort()
   
   let andaresOpcoes = []
@@ -115,7 +120,6 @@ export default function Leitura() {
     
     andaresOpcoes = andaresReais.map(a => ({ valor: a, label: a }))
     
-    // Adiciona opção "Sem Andar" se houver medidores assim
     const temSemAndar = medidoresDoPredio.some(m => !m.andar)
     if (temSemAndar) {
       andaresOpcoes.unshift({ valor: VALOR_SEM_ANDAR, label: 'Geral / Sem Andar' })
@@ -128,14 +132,13 @@ export default function Leitura() {
     return m.andar === andarSelecionado
   })
 
-  // 3. Busca Histórico e Calcula Média (Quando seleciona medidor)
+  // 4. Busca Histórico
   useEffect(() => {
     if (!medidorSelecionado) return
 
     async function fetchDadosMedidor() {
       let nomeMedidor = todosMedidores.find(m => m.id == medidorSelecionado)?.nome
       
-      // Fallback de segurança caso a lista não tenha atualizado a tempo
       if (!nomeMedidor) {
          const { data } = await supabase.from('medidores').select('nome').eq('id', medidorSelecionado).single()
          if(data) nomeMedidor = data.nome
@@ -145,7 +148,6 @@ export default function Leitura() {
 
       const viewAlvo = tipoAtivo === 'agua' ? 'view_hidrometros_calculada' : 'view_energia_calculada'
 
-      // Busca as últimas 10 leituras para calcular a média
       const { data: historico } = await supabase
         .from(viewAlvo)
         .select('leitura_num, consumo_calculado')
@@ -156,7 +158,6 @@ export default function Leitura() {
       if (historico && historico.length > 0) {
         setLeituraAnterior(historico[0].leitura_num || 0)
         
-        // Calcula a média ignorando zeros ou nulos
         const consumosValidos = historico.map(h => h.consumo_calculado).filter(c => c !== null && c >= 0)
         
         if (consumosValidos.length > 0) {
@@ -181,34 +182,25 @@ export default function Leitura() {
     }
   }
 
-  // --- CÁLCULOS DE VALIDAÇÃO E ALERTA ---
+  // --- VALIDAÇÕES ---
   const valorAtualNum = Number(leituraAtual)
   const valorAnteriorNum = Number(leituraAnterior)
   const consumo = leituraAtual ? valorAtualNum - valorAnteriorNum : 0
   
-  // Regra 1: Valor menor que anterior (Virada de relógio ou erro)
   const isMenorQueAnterior = leituraAtual && leituraAnterior !== null && valorAtualNum < valorAnteriorNum
-  
-  // Regra 2: Consumo 60% maior que a média histórica (NOVO)
-  // Só valida se não for virada de relógio e se tivermos histórico suficiente
   const isConsumoAlto = !isMenorQueAnterior && mediaHistorica && consumo > (mediaHistorica * (1 + PORCENTAGEM_ALERTA))
 
-  // Regra Final de Envio:
-  // 1. Tem leitura e foto?
-  // 2. Se for menor que anterior, tem motivo selecionado?
-  // 3. Se for consumo alto, tem justificativa escrita?
   const podeEnviar = leituraAtual && foto && 
                      (!isMenorQueAnterior || motivoValidacao !== '') &&
                      (!isConsumoAlto || justificativa.length > 3)
 
-  // 4. Função de Envio (Submit)
+  // 5. Submit
   async function handleSubmit(e) {
     e.preventDefault()
     if (!podeEnviar) return
     setLoading(true)
     
     try {
-      // Upload da Foto
       const fileExt = foto.name.split('.').pop()
       const fileName = `${Date.now()}_${Math.random()}.${fileExt}`
       const { error: uploadError } = await supabase.storage.from('evidencias').upload(fileName, foto)
@@ -221,14 +213,11 @@ export default function Leitura() {
          medidorObj = data
       }
       
-      // Monta a Observação Automática
       let obsFinal = ''
-      
       if (isConsumoAlto) {
         const porcentagem = Math.round(((consumo / mediaHistorica) - 1) * 100)
         obsFinal = `ALERTA: Consumo +${porcentagem}% acima da média.`
       }
-      
       if (isMenorQueAnterior) {
         obsFinal = motivoValidacao === 'virada' ? 'Virada de Relógio' : 'Ajuste Manual'
       }
@@ -240,19 +229,17 @@ export default function Leitura() {
         data_hora: new Date().toISOString(),
         apenas_data: new Date().toISOString().split('T')[0],
         foto_url: urlData.publicUrl,
-        usuario: 'App Web', // Futuramente pegar do contexto de Auth
+        usuario: 'App Web', 
         observacao: obsFinal,
-        justificativa: isConsumoAlto ? justificativa : null // <--- SALVA A JUSTIFICATIVA
+        justificativa: isConsumoAlto ? justificativa : null
       }
 
-      // Insere na tabela correta
       if (tipoAtivo === 'agua') {
         await supabase.from('hidrometros').insert({ ...dadosComuns, leitura_hidrometro: leituraAtual.toString() })
       } else {
         await supabase.from('energia').insert({ ...dadosComuns, leitura_energia: leituraAtual.toString() })
       }
       
-      // Envio para N8N (Opcional)
       if (N8N_WEBHOOK_URL) {
         fetch(N8N_WEBHOOK_URL, {
           method: 'POST',
@@ -268,13 +255,12 @@ export default function Leitura() {
 
       setMensagem(isConsumoAlto ? 'Salvo com justificativa!' : 'Leitura salva com sucesso!')
       
-      // Reset do Formulário
       setLeituraAtual('')
       setFoto(null)
       setPreviewUrl(null)
       setMotivoValidacao('')
-      setJustificativa('') // Limpa a justificativa
-      setMedidorSelecionado('') // Força usuário a selecionar de novo (boa prática para não errar o próximo)
+      setJustificativa('')
+      setMedidorSelecionado('') 
       setPredioSelecionado('')
       setAndarSelecionado('')
       
@@ -287,14 +273,13 @@ export default function Leitura() {
     }
   }
 
-  // Wizard Steps (Visual)
   const currentStep = !predioSelecionado ? 1 : !andarSelecionado ? 2 : !medidorSelecionado ? 3 : !leituraAtual ? 4 : !foto ? 5 : 6
 
   return (
     <div className="min-h-screen bg-transparent py-6 px-4 sm:py-12">
       <div className="max-w-5xl mx-auto px-2 sm:px-6 lg:px-8">
         
-        {/* HEADER E AÇÕES DO TOPO */}
+        {/* HEADER */}
         <div className="mb-6 sm:mb-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
             <div className="flex items-center justify-between w-full md:w-auto">
@@ -303,7 +288,6 @@ export default function Leitura() {
                 <p className="text-sm text-gray-600 mt-1">Identificação via QR Code ou Manual</p>
               </div>
               
-              {/* Botão Scanner (Mobile) */}
               <button 
                 onClick={() => setMostrarScanner(true)}
                 className="md:hidden p-3 bg-gray-900 text-white rounded-xl shadow-lg active:scale-95 flex flex-col items-center gap-1"
@@ -314,7 +298,6 @@ export default function Leitura() {
             </div>
             
             <div className="flex flex-col sm:flex-row gap-3 items-center justify-end">
-               {/* Botão Scanner (Desktop) */}
                <button 
                 onClick={() => setMostrarScanner(true)}
                 className="hidden md:flex items-center gap-2 px-4 py-3 bg-gray-800 text-white rounded-xl font-semibold hover:bg-gray-900 shadow-lg transition-transform hover:scale-105 mr-2"
@@ -323,7 +306,6 @@ export default function Leitura() {
                 Escanear Relógio
               </button>
 
-              {/* Seletor de Tipo (Agua/Energia) */}
               <div className="inline-flex bg-white rounded-2xl p-1.5 shadow-lg border border-gray-200">
                 <button
                   onClick={() => setTipoAtivo('agua')}
@@ -351,7 +333,7 @@ export default function Leitura() {
             </div>
           </div>
 
-          {/* VISUALIZAÇÃO DOS PASSOS (STEPS) */}
+          {/* STEPS */}
           <div className="hidden md:flex items-center justify-between gap-2 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
             {[
               { num: 1, title: 'Unidade', icon: Building, done: !!predioSelecionado },
@@ -384,7 +366,7 @@ export default function Leitura() {
           </div>
         </div>
 
-        {/* MODAL SCANNER */}
+        {/* MODAL SCANNER - CORRIGIDO AQUI */}
         {mostrarScanner && (
           <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center p-4 animate-in fade-in">
             <div className="w-full max-w-sm relative">
@@ -396,8 +378,10 @@ export default function Leitura() {
                     allowMultiple={false}
                 />
               </div>
+              
+              {/* BOTÃO CANCELAR: Agora redireciona para a raiz '/' */}
               <button 
-                onClick={() => setMostrarScanner(false)}
+                onClick={() => navigate('/')} 
                 className="mt-6 w-full py-3 bg-white/20 border border-white/30 text-white rounded-xl font-bold backdrop-blur-sm"
               >
                 Cancelar
@@ -406,7 +390,7 @@ export default function Leitura() {
           </div>
         )}
 
-        {/* MENSAGEM DE SUCESSO/FEEDBACK */}
+        {/* MENSAGEM */}
         {mensagem && (
           <div className={`mb-6 p-4 rounded-2xl flex items-center gap-3 animate-in slide-in-from-top ${
             mensagem.includes('Identificado') 
@@ -420,12 +404,11 @@ export default function Leitura() {
           </div>
         )}
 
-        {/* --- FORMULÁRIO PRINCIPAL --- */}
+        {/* FORMULÁRIO */}
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-8">
           
           <div className="md:col-span-2 space-y-6">
             
-            {/* CARD 1: IDENTIFICAÇÃO */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <Search className="w-5 h-5 text-gray-500" /> Identificação
@@ -465,7 +448,6 @@ export default function Leitura() {
               </div>
             </div>
 
-            {/* CARD 2: LEITURA E VALIDAÇÕES */}
             <div className={`rounded-2xl shadow-lg border p-6 transition-colors duration-300 ${
                isConsumoAlto ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'
             }`}>
@@ -490,13 +472,11 @@ export default function Leitura() {
                 value={leituraAtual}
                 onChange={(e) => {
                   setLeituraAtual(e.target.value)
-                  // Limpa validação de "virada" se o valor voltar a ser maior
                   if (Number(e.target.value) >= leituraAnterior) setMotivoValidacao('')
                 }}
                 disabled={!medidorSelecionado}
               />
 
-               {/* --- CAMPO DE JUSTIFICATIVA (APARECE SE CONSUMO ALTO) --- */}
                {isConsumoAlto && (
                  <div className="mt-6 animate-in fade-in slide-in-from-top-4">
                    <div className="bg-red-100 border-l-4 border-red-500 p-4 rounded-r-lg mb-4">
@@ -521,7 +501,6 @@ export default function Leitura() {
                  </div>
                )}
 
-               {/* --- OPÇÕES DE VIRADA DE RELÓGIO --- */}
                {isMenorQueAnterior && (
                   <div className="mt-4 bg-white border border-red-200 rounded-xl p-4 animate-in fade-in">
                     <div className="flex items-center gap-2 text-red-800 font-bold mb-2">
@@ -541,7 +520,6 @@ export default function Leitura() {
                 )}
             </div>
 
-            {/* CARD 3: FOTO DE EVIDÊNCIA */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <Camera className="w-5 h-5 text-gray-500" /> Evidência Fotográfica
@@ -594,7 +572,6 @@ export default function Leitura() {
               )}
             </div>
             
-            {/* BOTÃO SALVAR (MOBILE) */}
             <button
                 type="submit"
                 disabled={loading || !podeEnviar}
@@ -609,7 +586,6 @@ export default function Leitura() {
 
           </div>
 
-          {/* COLUNA DA DIREITA - RESUMO FIXO (DESKTOP) */}
           <div className="hidden md:block col-span-1 space-y-6">
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 sticky top-8">
               <h3 className="font-bold text-xl text-gray-900 mb-6 flex items-center gap-2">
@@ -645,7 +621,6 @@ export default function Leitura() {
                    </div>
                  )}
 
-                 {/* Botão Salvar Desktop */}
                  <button
                   type="submit"
                   disabled={loading || !podeEnviar}
@@ -670,7 +645,6 @@ export default function Leitura() {
               </div>
             </div>
 
-            {/* Card de Ajuda */}
             <div className={`hidden md:block bg-gradient-to-br ${tipoAtivo === 'agua' ? 'from-blue-50 to-cyan-50 border-blue-200' : 'from-yellow-50 to-yellow-50 border-yellow-200'} rounded-2xl shadow-lg border p-6`}>
               <h3 className={`text-lg font-bold ${tipoAtivo === 'agua' ? 'text-blue-900' : 'text-yellow-800'} mb-3 flex items-center gap-2`}>
                 <Info className="w-5 h-5" />
