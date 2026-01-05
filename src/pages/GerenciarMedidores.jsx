@@ -45,6 +45,7 @@ function ModalDetalhes({ medidor, onClose }) {
   const [medicoes, setMedicoes] = useState([])
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
+  const [totalMedicoes, setTotalMedicoes] = useState(0)
 
   useEffect(() => {
     async function fetchMedicoes() {
@@ -54,16 +55,18 @@ function ModalDetalhes({ medidor, onClose }) {
         const colunaLeitura = medidor.tipo === 'agua' ? 'leitura_hidrometro' : 'leitura_energia'
         const colunaConsumo = medidor.tipo === 'agua' ? 'gasto_diario' : 'variacao'
         
-        // Usa identificador_relogio que é o nome do medidor
-        const { data, error } = await supabase
+        // Relacionamento direto: identificador_relogio = med_medidores.nome (FK)
+        const { data, error, count } = await supabase
           .from(tabela)
-          .select(`id, data_hora, apenas_data, ${colunaLeitura}, ${colunaConsumo}, usuario, foto_url, observacao, unidade, andar`)
+          .select(`id_registro, data_hora, apenas_data, created_at, ${colunaLeitura}, ${colunaConsumo}, usuario, foto_url, observacao, unidade, andar, identificador_relogio`, { count: 'exact' })
           .eq('identificador_relogio', medidor.nome)
-          .order('data_hora', { ascending: false })
+          .order('created_at', { ascending: false, nullsFirst: false })
           .limit(20)
 
         if (error) throw error
+        
         setMedicoes(data || [])
+        setTotalMedicoes(count || 0)
       } catch (error) {
         console.error('Erro ao buscar medições:', error)
       } finally {
@@ -173,7 +176,7 @@ function ModalDetalhes({ medidor, onClose }) {
               </div>
               <div className="bg-blue-50 p-4 rounded-xl">
                 <p className="text-xs text-blue-600 uppercase font-bold mb-1">Total de Medições</p>
-                <p className="text-3xl font-bold text-blue-700">{medicoes.length}</p>
+                <p className="text-3xl font-bold text-blue-700">{totalMedicoes}</p>
               </div>
             </div>
           </div>
@@ -196,28 +199,146 @@ function ModalDetalhes({ medidor, onClose }) {
                   <thead>
                     <tr className="bg-gray-100">
                       <th className="p-3 text-left font-bold text-gray-600">Data</th>
-                      <th className="p-3 text-left font-bold text-gray-600">Leitura</th>
-                      <th className="p-3 text-left font-bold text-gray-600">Consumo</th>
-                      <th className="p-3 text-left font-bold text-gray-600">Usuário</th>
-                      <th className="p-3 text-left font-bold text-gray-600">Obs</th>
+                      <th className="p-3 text-right font-bold text-gray-600">Anterior</th>
+                      <th className="p-3 text-right font-bold text-gray-600">Atual</th>
+                      <th className="p-3 text-right font-bold text-gray-600">Consumo</th>
+                      <th className="p-3 text-center font-bold text-gray-600">Foto</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {medicoes.map((m, i) => {
-                      const leitura = medidor.tipo === 'agua' ? m.leitura_hidrometro : m.leitura_energia
-                      const consumo = medidor.tipo === 'agua' ? m.gasto_diario : m.variacao
-                      const dataFormatada = m.data_hora 
-                        ? new Date(m.data_hora).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-                        : m.apenas_data || '-'
+                      const unidadeMedida = medidor.tipo === 'agua' ? 'm³' : 'kWh'
+                      
+                      // Parser para dados concatenados do Forms legado
+                      const parseDadosConcatenados = () => {
+                        const str = m.identificador_relogio || ''
+                        
+                        // Detecta se é dado concatenado
+                        if (!str.includes(',') || (!str.includes('202') && !str.includes('[{'))) {
+                          return { isParsed: false }
+                        }
+                        
+                        try {
+                          // Extrai JSON da foto
+                          let fotoUrl = null
+                          const jsonRegex = /\[\{.*?\}\]/gs
+                          const jsonMatch = str.match(jsonRegex)
+                          if (jsonMatch) {
+                            try {
+                              const jsonStr = jsonMatch[0].replace(/""/g, '"')
+                              const parsed = JSON.parse(jsonStr)
+                              const obj = Array.isArray(parsed) ? parsed[0] : parsed
+                              fotoUrl = obj?.link || obj?.url || null
+                            } catch {}
+                          }
+                          
+                          // Remove JSON e separa por vírgula
+                          const strSemJson = str.replace(/,"\[\{.*?\}\]"/gs, ',FOTO,').replace(/\[\{.*?\}\]/gs, 'FOTO')
+                          const partes = strSemJson.split(',')
+                          
+                          // Estrutura: [0]=unidade, [1]=andar, [2]=nome, [3]=leitura, [4]=data, ..., [-2]=anterior, [-1]=consumo
+                          const leituraAtual = partes[3] && /^\d+$/.test(partes[3]) ? partes[3] : null
+                          const dataMatch = partes.find(p => /^\d{4}-\d{2}-\d{2}$/.test(p))
+                          
+                          const ultimoItem = partes[partes.length - 1]?.trim()
+                          const penultimoItem = partes[partes.length - 2]?.trim()
+                          const consumo = /^\d+$/.test(ultimoItem) ? ultimoItem : null
+                          const leituraAnterior = /^\d+$/.test(penultimoItem) ? penultimoItem : null
+                          
+                          return {
+                            leituraAtual,
+                            leituraAnterior,
+                            consumo,
+                            data: dataMatch,
+                            fotoUrl,
+                            isParsed: true
+                          }
+                        } catch (e) {
+                          console.warn('Erro ao parsear:', e)
+                          return { isParsed: false }
+                        }
+                      }
+                      
+                      const dadosParsed = parseDadosConcatenados()
+                      
+                      const leituraAtual = dadosParsed.isParsed ? dadosParsed.leituraAtual : (medidor.tipo === 'agua' ? m.leitura_hidrometro : m.leitura_energia)
+                      const leituraAnterior = dadosParsed.isParsed ? dadosParsed.leituraAnterior : (medidor.tipo === 'agua' ? m.hidrometro_anterior : m.energia_anterior)
+                      const consumo = dadosParsed.isParsed ? dadosParsed.consumo : (medidor.tipo === 'agua' ? m.gasto_diario : m.variacao)
+                      
+                      // Parsear data
+                      const parseData = () => {
+                        if (dadosParsed.isParsed && dadosParsed.data) {
+                          const [ano, mes, dia] = dadosParsed.data.split('-')
+                          return new Date(ano, mes - 1, dia)
+                        }
+                        if (m.apenas_data && /^\d{4}-\d{2}-\d{2}$/.test(m.apenas_data)) {
+                          const [ano, mes, dia] = m.apenas_data.split('-')
+                          return new Date(ano, mes - 1, dia)
+                        }
+                        if (m.created_at) {
+                          const d = new Date(m.created_at)
+                          if (!isNaN(d.getTime()) && d.getFullYear() > 2000) return d
+                        }
+                        return null
+                      }
+                      
+                      const dataObj = parseData()
+                      const dataFormatada = dataObj 
+                        ? dataObj.toLocaleDateString('pt-BR')
+                        : '-'
+                      
+                      // Foto URL
+                      const getFotoUrl = () => {
+                        if (dadosParsed.isParsed && dadosParsed.fotoUrl) return dadosParsed.fotoUrl
+                        if (!m.foto_url) return null
+                        if (m.foto_url.startsWith('http')) return m.foto_url
+                        if (m.foto_url.startsWith('[{') || m.foto_url.startsWith('{')) {
+                          try {
+                            const parsed = JSON.parse(m.foto_url)
+                            const obj = Array.isArray(parsed) ? parsed[0] : parsed
+                            return obj?.link || obj?.url || null
+                          } catch { return null }
+                        }
+                        return null
+                      }
+                      
+                      const fotoUrl = getFotoUrl()
+                      
+                      // Formata número
+                      const formatNum = (val) => {
+                        if (!val || val === 'NÃO HÁ REGISTRO ANTERIOR') return '-'
+                        const num = Number(val)
+                        return !isNaN(num) ? num.toLocaleString('pt-BR') : '-'
+                      }
                       
                       return (
-                        <tr key={m.id || i} className="hover:bg-gray-50">
-                          <td className="p-3 whitespace-nowrap">{dataFormatada}</td>
-                          <td className="p-3 font-mono font-semibold">{leitura || '-'}</td>
-                          <td className="p-3 font-mono">{consumo || '-'}</td>
-                          <td className="p-3 text-gray-500">{m.usuario || '-'}</td>
-                          <td className="p-3 text-gray-500 text-xs max-w-[150px] truncate" title={m.observacao}>
-                            {m.observacao || '-'}
+                        <tr key={m.id_registro || i} className="hover:bg-gray-50">
+                          <td className="p-3 whitespace-nowrap text-gray-700">{dataFormatada}</td>
+                          <td className="p-3 text-right font-mono text-gray-500">
+                            {formatNum(leituraAnterior)}
+                            {leituraAnterior && !isNaN(Number(leituraAnterior)) && <span className="text-[10px] text-gray-400 ml-1">{unidadeMedida}</span>}
+                          </td>
+                          <td className="p-3 text-right font-mono font-semibold text-gray-900">
+                            {formatNum(leituraAtual)}
+                            {leituraAtual && !isNaN(Number(leituraAtual)) && <span className="text-[10px] text-gray-400 ml-1">{unidadeMedida}</span>}
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-emerald-600">
+                            {formatNum(consumo)}
+                            {consumo && !isNaN(Number(consumo)) && <span className="text-[10px] text-gray-400 ml-1">{unidadeMedida}</span>}
+                          </td>
+                          <td className="p-3 text-center">
+                            {fotoUrl ? (
+                              <a 
+                                href={fotoUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs font-medium bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-lg transition-colors"
+                              >
+                                📷 Ver
+                              </a>
+                            ) : (
+                              <span className="text-gray-300 text-xs">-</span>
+                            )}
                           </td>
                         </tr>
                       )
