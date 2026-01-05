@@ -1,8 +1,13 @@
 import { Link, useLocation } from 'react-router-dom'
-import { PlusSquare, List, BarChart3 } from 'lucide-react'
+import { PlusSquare, List, BarChart3, Users, Gauge } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function BottomMenu() {
   const location = useLocation()
+  const { user } = useAuth()
+  
+  // Verifica se o usuário é admin
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
   
   // Função para destacar o ícone ativo
   const isActive = (path) => {
@@ -29,6 +34,19 @@ export default function BottomMenu() {
           <BarChart3 className="w-7 h-7" />
           <span className="text-[11px] font-semibold tracking-tight">Gráficos</span>
         </Link>
+
+        {isAdmin && (
+          <>
+            <Link to="/medidores" className={`flex flex-col items-center gap-1 transition-all duration-300 ${isActive('/medidores')}`}>
+              <Gauge className="w-7 h-7" />
+              <span className="text-[11px] font-semibold tracking-tight">Medidores</span>
+            </Link>
+            <Link to="/usuarios" className={`flex flex-col items-center gap-1 transition-all duration-300 ${isActive('/usuarios')}`}>
+              <Users className="w-7 h-7" />
+              <span className="text-[11px] font-semibold tracking-tight">Usuários</span>
+            </Link>
+          </>
+        )}
 
       </div>
     </div>

@@ -28,7 +28,7 @@ export default function Dashboard() {
       setLoading(true)
       
       // Define tabela e coluna de consumo baseada no tipo
-      const tabela = tipoAtivo === 'agua' ? 'hidrometros' : 'energia'
+      const tabela = tipoAtivo === 'agua' ? 'med_hidrometros' : 'med_energia'
       const colunaConsumo = tipoAtivo === 'agua' ? 'gasto_diario' : 'variacao'
       const colunaData = 'apenas_data' // ou data_hora se preferir precisão
       

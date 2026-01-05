@@ -42,6 +42,7 @@ export default function Leitura() {
   
   // Controle do Scanner
   const [mostrarScanner, setMostrarScanner] = useState(false)
+  const [cameraError, setCameraError] = useState(null)
   
   const fileInputRef = useRef(null)
 
@@ -62,7 +63,7 @@ export default function Leitura() {
       }
       
       const { data } = await supabase
-        .from('medidores')
+        .from('med_medidores')
         .select('*')
         .eq('tipo', tipoAtivo)
         .order('nome')
@@ -82,7 +83,7 @@ export default function Leitura() {
 
     try {
       const { data: medidor, error } = await supabase
-        .from('medidores')
+        .from('med_medidores')
         .select('*')
         .eq('token', tokenLido) 
         .single()
@@ -140,25 +141,34 @@ export default function Leitura() {
       let nomeMedidor = todosMedidores.find(m => m.id == medidorSelecionado)?.nome
       
       if (!nomeMedidor) {
-         const { data } = await supabase.from('medidores').select('nome').eq('id', medidorSelecionado).single()
+         const { data } = await supabase.from('med_medidores').select('nome').eq('id', medidorSelecionado).single()
          if(data) nomeMedidor = data.nome
       }
 
       if (!nomeMedidor) return
 
-      const viewAlvo = tipoAtivo === 'agua' ? 'view_hidrometros_calculada' : 'view_energia_calculada'
+      // Busca histórico diretamente das tabelas (sem views)
+      const tabela = tipoAtivo === 'agua' ? 'med_hidrometros' : 'med_energia'
+      const colunaLeitura = tipoAtivo === 'agua' ? 'leitura_hidrometro' : 'leitura_energia'
+      const colunaConsumo = tipoAtivo === 'agua' ? 'gasto_diario' : 'variacao'
 
       const { data: historico } = await supabase
-        .from(viewAlvo)
-        .select('leitura_num, consumo_calculado')
+        .from(tabela)
+        .select(`${colunaLeitura}, ${colunaConsumo}`)
         .eq('identificador_relogio', nomeMedidor)
-        .order('data_real', { ascending: false })
+        .order('data_hora', { ascending: false })
         .limit(10)
 
       if (historico && historico.length > 0) {
-        setLeituraAnterior(historico[0].leitura_num || 0)
+        // Pega a última leitura
+        const ultimaLeitura = historico[0][colunaLeitura]
+        setLeituraAnterior(ultimaLeitura ? Number(ultimaLeitura) : 0)
         
-        const consumosValidos = historico.map(h => h.consumo_calculado).filter(c => c !== null && c >= 0)
+        // Calcula média dos consumos válidos
+        const consumosValidos = historico
+          .map(h => h[colunaConsumo])
+          .filter(c => c !== null && c !== '' && !isNaN(Number(c)) && Number(c) >= 0)
+          .map(c => Number(c))
         
         if (consumosValidos.length > 0) {
           const soma = consumosValidos.reduce((a, b) => a + b, 0)
@@ -209,7 +219,7 @@ export default function Leitura() {
       
       let medidorObj = todosMedidores.find(m => m.id == medidorSelecionado)
       if(!medidorObj) {
-         const { data } = await supabase.from('medidores').select('*').eq('id', medidorSelecionado).single()
+         const { data } = await supabase.from('med_medidores').select('*').eq('id', medidorSelecionado).single()
          medidorObj = data
       }
       
@@ -237,14 +247,14 @@ export default function Leitura() {
       // === AQUI ESTÁ A CORREÇÃO ===
       // Agora salvamos a 'leitura anterior' e o 'gasto calculado' no banco
       if (tipoAtivo === 'agua') {
-        await supabase.from('hidrometros').insert({ 
+        await supabase.from('med_hidrometros').insert({ 
           ...dadosComuns, 
           leitura_hidrometro: leituraAtual.toString(),
           hidrometro_anterior: leituraAnterior?.toString(), // Salva a anterior
           gasto_diario: consumo.toString()                  // Salva o cálculo (Delta)
         })
       } else {
-        await supabase.from('energia').insert({ 
+        await supabase.from('med_energia').insert({ 
           ...dadosComuns, 
           leitura_energia: leituraAtual.toString(),
           energia_anterior: leituraAnterior?.toString(),    // Salva a anterior
@@ -383,22 +393,42 @@ export default function Leitura() {
 
         {/* MODAL SCANNER */}
         {mostrarScanner && (
-          <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center p-4 animate-in fade-in">
+          <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center p-4">
             <div className="w-full max-w-sm relative">
-              <h3 className="text-white text-center text-lg font-bold mb-4">Aponte para o QR Code</h3>
-              <div className="rounded-2xl overflow-hidden border-2 border-white shadow-2xl">
+              <h3 className="text-white text-center text-lg font-bold mb-4">
+                Aponte para o QR Code
+              </h3>
+              
+              <div className="rounded-2xl overflow-hidden border-2 border-cyan-400">
                 <Scanner 
-                    onScan={handleMedidorScan} 
-                    scanDelay={500}
-                    allowMultiple={false}
+                  onScan={handleMedidorScan}
+                  scanDelay={500}
+                  allowMultiple={false}
                 />
               </div>
               
               <button 
-                onClick={() => navigate('/')} 
-                className="mt-6 w-full py-3 bg-white/20 border border-white/30 text-white rounded-xl font-bold backdrop-blur-sm"
+                onClick={() => setMostrarScanner(false)} 
+                className="mt-6 w-full py-3 bg-white/20 border border-white/30 text-white rounded-xl font-bold"
               >
                 Cancelar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ERRO DE CÂMERA */}
+        {cameraError && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3">
+            <AlertTriangle className="w-6 h-6 text-amber-600 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="font-semibold text-amber-800">Erro ao acessar câmera</p>
+              <p className="text-sm text-amber-700 mt-1">{cameraError}</p>
+              <button 
+                onClick={() => setCameraError(null)}
+                className="mt-2 text-sm text-amber-600 hover:text-amber-800 font-medium"
+              >
+                Fechar
               </button>
             </div>
           </div>

@@ -44,7 +44,7 @@ export default function Historico() {
   async function fetchLeituras() {
     setLoading(true)
     
-    const tabela = tipoAtivo === 'agua' ? 'hidrometros' : 'energia'
+    const tabela = tipoAtivo === 'agua' ? 'med_hidrometros' : 'med_energia'
 
     let query = supabase
       .from(tabela)
@@ -98,7 +98,7 @@ export default function Historico() {
 
   const handleDelete = async (id) => {
     if (!window.confirm('Tem certeza que deseja excluir este registro?')) return
-    const tabela = tipoAtivo === 'agua' ? 'hidrometros' : 'energia'
+    const tabela = tipoAtivo === 'agua' ? 'med_hidrometros' : 'med_energia'
     const { error } = await supabase.from(tabela).delete().eq('id_registro', id)
     if (!error) fetchLeituras()
   }

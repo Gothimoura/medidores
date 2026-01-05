@@ -4,10 +4,77 @@ import { supabase } from '../supabaseClient'
 const AuthContext = createContext()
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null) // null = não logado
+  const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // Função para validar o token salvo no localStorage
+  useEffect(() => {
+    // BOAS PRÁTICAS SUPABASE - onAuthStateChange já dispara INITIAL_SESSION na inicialização
+    // Não precisa de getSession() separado - isso causa race conditions
+    // Ref: https://supabase.com/docs/reference/javascript/auth-onauthstatechange
+    
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('[Auth] Evento:', event)
+        
+        if (session?.user) {
+          // Busca dados do profile de forma síncrona para evitar flicker
+          // Usando setTimeout(0) para evitar deadlock com Supabase
+          setTimeout(async () => {
+            try {
+              const { data: profileData, error } = await supabase
+                .from('profiles')
+                .select('name, role, email, access_medicoes, access_dp_rh')
+                .eq('id', session.user.id)
+                .single()
+
+              if (error && error.code !== 'PGRST116') {
+                console.warn('[Auth] Erro ao buscar profile:', error.message)
+              }
+
+              setUser({
+                id: session.user.id,
+                email: profileData?.email || session.user.email,
+                nome: profileData?.name || session.user.email,
+                role: profileData?.role || 'user',
+                access_medicoes: profileData?.access_medicoes ?? true,
+                access_dp_rh: profileData?.access_dp_rh ?? false,
+                tipo: 'email_senha'
+              })
+            } catch (err) {
+              console.error('[Auth] Erro ao processar profile:', err)
+              // Mesmo com erro, seta o user básico
+              setUser({
+                id: session.user.id,
+                email: session.user.email,
+                nome: session.user.email,
+                role: 'user',
+                access_medicoes: true,
+                access_dp_rh: false,
+                tipo: 'email_senha'
+              })
+            } finally {
+              setLoading(false)
+            }
+          }, 0)
+        } else {
+          // Sem sessão Supabase - verifica token QR Code
+          const tokenSalvo = localStorage.getItem('gowork_token_n1')
+          if (tokenSalvo) {
+            await validarTokenN1(tokenSalvo)
+          } else {
+            setUser(null)
+            setLoading(false)
+          }
+        }
+      }
+    )
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  // Função para validar o token QR Code salvo
   async function validarTokenN1(token) {
     try {
       const { data, error } = await supabase
@@ -18,40 +85,78 @@ export function AuthProvider({ children }) {
         .single()
 
       if (error || !data) {
-        // Token inválido ou inativo, remove do localStorage
         localStorage.removeItem('gowork_token_n1')
         setUser(null)
         setLoading(false)
         return
       }
 
-      // Token válido: Define o usuário como "Operacional"
-      const usuarioN1 = { 
+      setUser({ 
         id: data.id, 
         role: 'n1', 
         nome: data.descricao,
         tipo: 'qr_code' 
-      }
-      
-      setUser(usuarioN1)
+      })
       setLoading(false)
     } catch (error) {
-      console.error('Erro ao validar token:', error)
+      console.error('[Auth] Erro ao validar token:', error)
       localStorage.removeItem('gowork_token_n1')
       setUser(null)
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    // Verifica se já tem um "crachá" salvo no navegador ao abrir o app
-    const tokenSalvo = localStorage.getItem('gowork_token_n1')
-    if (tokenSalvo) {
-      validarTokenN1(tokenSalvo)
-    } else {
-      setLoading(false)
+  // Função para criar conta com email e senha
+  async function criarConta(nome, email, senha) {
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password: senha,
+        options: {
+          data: { name: nome }
+        }
+      })
+
+      if (authError) throw new Error(authError.message)
+      if (!authData.user) throw new Error('Erro ao criar conta')
+
+      // Cria profile com acesso NEGADO por padrão
+      // O admin deve liberar o acesso manualmente depois
+      await supabase
+        .from('profiles')
+        .upsert({
+          id: authData.user.id,
+          name: nome,
+          email: email,
+          role: 'user',
+          access_medicoes: false,  // Sem acesso por padrão
+          access_dp_rh: false      // Sem acesso por padrão
+        }, { onConflict: 'id' })
+
+      return { success: true, message: 'Conta criada! Aguarde liberação de acesso pelo administrador.' }
+    } catch (error) {
+      console.error('[Auth] Erro criarConta:', error)
+      return { success: false, message: error.message }
     }
-  }, [])
+  }
+
+  // Função para login com email e senha
+  async function loginComEmailSenha(email, senha) {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password: senha
+      })
+
+      if (error) throw new Error(error.message)
+      
+      // onAuthStateChange vai tratar o resto
+      return { success: true }
+    } catch (error) {
+      console.error('[Auth] Erro loginComEmailSenha:', error)
+      return { success: false, message: error.message }
+    }
+  }
 
   // Função para validar o QR Code
   async function loginViaQrCode(tokenLido) {
@@ -67,32 +172,28 @@ export function AuthProvider({ children }) {
         throw new Error('QR Code inválido ou inativo.')
       }
 
-      // Sucesso: Define o usuário como "Operacional"
-      const usuarioN1 = { 
+      setUser({ 
         id: data.id, 
         role: 'n1', 
         nome: data.descricao,
         tipo: 'qr_code' 
-      }
-      
-      setUser(usuarioN1)
-      localStorage.setItem('gowork_token_n1', tokenLido) // Mantém logado
+      })
+      localStorage.setItem('gowork_token_n1', tokenLido)
       return { success: true }
-      
     } catch (error) {
-      console.error(error)
+      console.error('[Auth] Erro loginViaQrCode:', error)
       return { success: false, message: error.message }
     }
   }
 
-  function logout() {
+  async function logout() {
+    await supabase.auth.signOut()
     setUser(null)
     localStorage.removeItem('gowork_token_n1')
-    // Aqui adicionaremos o logout da Microsoft futuramente
   }
 
   return (
-    <AuthContext.Provider value={{ user, loginViaQrCode, logout, loading }}>
+    <AuthContext.Provider value={{ user, criarConta, loginComEmailSenha, loginViaQrCode, logout, loading }}>
       {children}
     </AuthContext.Provider>
   )
