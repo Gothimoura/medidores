@@ -278,11 +278,18 @@ export default function GerenciarMedidores() {
 
   // Opções únicas para os filtros
   const filterOptions = useMemo(() => {
-    const predios = [...new Set(medidores.map(m => m.local_unidade).filter(Boolean))].sort()
-    const andares = [...new Set(medidores.map(m => m.andar).filter(Boolean))].sort()
-    const unidades = [...new Set(medidores.map(m => m.unidade).filter(Boolean))].sort()
-    return { predios, andares, unidades }
-  }, [medidores])
+    const predios = [...new Set(medidores.map(m => m.local_unidade).filter(Boolean))].sort();
+
+    let andares = [];
+    if (filtroPredio) {
+      const medidoresDoPredio = medidores.filter(m => m.local_unidade === filtroPredio);
+      andares = [...new Set(medidoresDoPredio.map(m => m.andar).filter(Boolean))].sort();
+    }
+
+    const unidades = [...new Set(medidores.map(m => m.unidade).filter(Boolean))].sort();
+    
+    return { predios, andares, unidades };
+  }, [medidores, filtroPredio]);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -809,7 +816,10 @@ export default function GerenciarMedidores() {
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Prédio/Local</label>
                   <select
                     value={filtroPredio}
-                    onChange={(e) => setFiltroPredio(e.target.value)}
+                    onChange={(e) => {
+                      setFiltroPredio(e.target.value)
+                      setFiltroAndar('') // Reseta o filtro de andar ao trocar de prédio
+                    }}
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-sm"
                   >
                     <option value="">Todos os prédios</option>
@@ -823,7 +833,8 @@ export default function GerenciarMedidores() {
                   <select
                     value={filtroAndar}
                     onChange={(e) => setFiltroAndar(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-sm"
+                    disabled={!filtroPredio}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
                   >
                     <option value="">Todos os andares</option>
                     {filterOptions.andares.map(a => (

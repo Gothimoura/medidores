@@ -19,7 +19,7 @@ const VALOR_SEM_ANDAR = '___SEM_ANDAR___'
 export default function Leitura() {
   const navigate = useNavigate()
   const { user, salvarLeitura } = useAuth()
-  const { tipoAtivo, setTipoAtivo } = useTheme()
+  const { tipoAtivo, setTipoAtivo, refreshData } = useTheme()
   const [todosMedidores, setTodosMedidores] = useState([])
   
   // Estados de Seleção (Filtros)
@@ -243,6 +243,8 @@ export default function Leitura() {
 
       const resultado = await salvarLeitura(dadosLeitura)
       if (!resultado.success) throw new Error(resultado.message)
+
+      refreshData() // Força a atualização de outros componentes, como o Dashboard
       
       if (N8N_WEBHOOK_URL) {
         await fetch(N8N_WEBHOOK_URL, {

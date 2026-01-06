@@ -4,9 +4,15 @@ const ThemeContext = createContext()
 
 export function ThemeProvider({ children }) {
   const [tipoAtivo, setTipoAtivo] = useState('agua')
+  const [dataVersion, setDataVersion] = useState(0)
+
+  // Função para forçar a atualização de componentes que dependem de dados do banco
+  const refreshData = () => {
+    setDataVersion(v => v + 1)
+  }
 
   return (
-    <ThemeContext.Provider value={{ tipoAtivo, setTipoAtivo }}>
+    <ThemeContext.Provider value={{ tipoAtivo, setTipoAtivo, dataVersion, refreshData }}>
       {children}
     </ThemeContext.Provider>
   )

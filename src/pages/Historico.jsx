@@ -2,23 +2,27 @@ import { useEffect, useState } from 'react'
 import { useTheme } from '../contexts/ThemeContext'
 import { supabase } from '../supabaseClient'
 import { 
-  Calendar, Droplets, Zap, Trash2, X, Search, Filter, 
+  Calendar, Droplets, Zap, Trash2, X, Search, Filter, Edit2, Save,
   Building, MapPin, ChevronLeft, ChevronRight, BarChart3, 
   MessageSquare 
 } from 'lucide-react'
 import CustomSelect from '../components/CustomSelect'
 
-const ITENS_POR_PAGINA = 20
+const ITENS_POR_PAGINA = 50
 const VALOR_SEM_ANDAR = '___SEM_ANDAR___'
 
 export default function Historico() {
-  const { tipoAtivo, setTipoAtivo } = useTheme()
+  const { tipoAtivo, setTipoAtivo, refreshData } = useTheme()
   
   // Estados de Dados
   const [leituras, setLeituras] = useState([])
   const [loading, setLoading] = useState(true)
   const [totalRegistros, setTotalRegistros] = useState(0)
   const [paginaAtual, setPaginaAtual] = useState(1)
+
+  // Estados para Edição
+  const [editingId, setEditingId] = useState(null)
+  const [editForm, setEditForm] = useState({})
 
   // Estados de Filtro
   const [termoBusca, setTermoBusca] = useState('')
@@ -112,8 +116,11 @@ export default function Historico() {
   const handleDelete = async (id) => {
     if (!window.confirm('Tem certeza que deseja excluir este registro?')) return
     const tabela = tipoAtivo === 'agua' ? 'med_hidrometros' : 'med_energia'
-    const { error } = await supabase.from(tabela).delete().eq('id', id)
-    if (!error) fetchLeituras()
+    const { error } = await supabase.from(tabela).delete().eq('id', id);
+    if (!error) {
+      fetchLeituras();
+      refreshData(); // Força a atualização de outros componentes, como o Dashboard
+    }
   }
 
   const limparFiltros = () => {
@@ -123,6 +130,47 @@ export default function Historico() {
     setDataInicio('')
     setDataFim('')
   }
+
+  // Funções de Edição
+  function handleEdit(item) {
+    setEditingId(item.id)
+    setEditForm({ leitura: item.leitura || '' })
+  }
+
+  function handleCancelEdit() {
+    setEditingId(null)
+    setEditForm({})
+  }
+
+  async function handleSave(itemId) {
+    const tabela = tipoAtivo === 'agua' ? 'med_hidrometros' : 'med_energia'
+    try {
+      const { error } = await supabase
+        .from(tabela)
+        .update({ leitura: editForm.leitura })
+        .eq('id', itemId)
+
+      if (error) throw error
+      
+      // Atualiza o estado local em vez de buscar tudo de novo,
+      // para que o item não mude de posição na lista.
+      setLeituras(leiturasAtuais =>
+        leiturasAtuais.map(item =>
+          item.id === itemId
+            ? { ...item, leitura: editForm.leitura }
+            : item
+        )
+      )
+      setEditingId(null)
+      refreshData() // Força a atualização de outros componentes, como o Dashboard
+    } catch (error) {
+      console.error("Erro ao salvar edição:", error)
+      alert("Erro ao salvar a edição.")
+    }
+  }
+
+  const de = (paginaAtual - 1) * ITENS_POR_PAGINA;
+  const ate = de + leituras.length;
 
   return (
     <div className="min-h-screen bg-gray-50/50 p-4 md:p-8">
@@ -285,9 +333,22 @@ export default function Historico() {
                         
                         {/* Leitura */}
                         <td className="p-4 text-right">
-                          <span className="font-mono font-semibold text-gray-900">{formatNum(item.leitura)}</span>
-                          {item.leitura && !isNaN(Number(item.leitura)) && (
-                            <span className="text-[10px] text-gray-400 ml-1">{unidadeMedida}</span>
+                          {editingId === item.id ? (
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={editForm.leitura}
+                              onChange={(e) => setEditForm({ ...editForm, leitura: e.target.value })}
+                              className="w-32 px-2 py-1.5 border border-blue-300 rounded-lg text-right font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                              autoFocus
+                            />
+                          ) : (
+                            <>
+                              <span className="font-mono font-semibold text-gray-900">{formatNum(item.leitura)}</span>
+                              {item.leitura && !isNaN(Number(item.leitura)) && (
+                                <span className="text-[10px] text-gray-400 ml-1">{unidadeMedida}</span>
+                              )}
+                            </>
                           )}
                         </td>
                         
@@ -307,32 +368,46 @@ export default function Historico() {
                           )}
                         </td>
                         <td className="p-4 text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            {(item.justificativa || item.observacao) && (
-                              <button 
-                                onClick={() => setJustificativaModal({
-                                  texto: item.justificativa,
-                                  obs: item.observacao,
-                                  autor: item.usuario
-                                })}
-                                className={`p-2 rounded-full transition-all ${
-                                  item.justificativa 
-                                    ? 'text-red-600 bg-red-100 hover:bg-red-200 animate-pulse' 
-                                    : 'text-gray-400 hover:bg-gray-100'
-                                }`}
-                                title="Ler Observação"
+                          {editingId === item.id ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => handleSave(item.id)}
+                                className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition-colors"
+                                title="Salvar"
                               >
-                                <MessageSquare className="w-4 h-4" />
+                                <Save className="w-5 h-5" />
                               </button>
-                            )}
-                            <button 
-                              onClick={() => handleDelete(item.id)}
-                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"
-                              title="Excluir"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
+                              <button
+                                onClick={handleCancelEdit}
+                                className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                                title="Cancelar"
+                              >
+                                <X className="w-5 h-5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center gap-1">
+                              {(item.justificativa || item.observacao) && (
+                                <button 
+                                  onClick={() => setJustificativaModal({ texto: item.justificativa, obs: item.observacao, autor: item.usuario })}
+                                  className={`p-2 rounded-lg transition-all ${
+                                    item.justificativa 
+                                      ? 'text-red-600 bg-red-50 hover:bg-red-100 animate-pulse' 
+                                      : 'text-purple-600 hover:bg-purple-50'
+                                  }`}
+                                  title="Ler Observação/Justificativa"
+                                >
+                                  <MessageSquare className="w-5 h-5" />
+                                </button>
+                              )}
+                              <button onClick={() => handleEdit(item)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Editar">
+                                <Edit2 className="w-5 h-5" />
+                              </button>
+                              <button onClick={() => handleDelete(item.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Excluir">
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )
@@ -342,22 +417,25 @@ export default function Historico() {
             </table>
           </div>
 
-          <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 flex items-center justify-between">
-            <span className="text-xs text-gray-500">
-              Mostrando página {paginaAtual} de {Math.max(1, Math.ceil(totalRegistros / ITENS_POR_PAGINA))}
-            </span>
-            <div className="flex gap-2">
+          <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 flex items-center justify-between">
+            <div className="text-xs text-gray-600">
+              Mostrando <span className="font-bold text-gray-800">{leituras.length > 0 ? de + 1 : 0}</span> - <span className="font-bold text-gray-800">{ate}</span> de <span className="font-bold text-gray-800">{totalRegistros}</span> registros
+            </div>
+            <div className="flex items-center gap-4">
+              <span className="text-xs text-gray-600 hidden sm:inline">
+                Página <span className="font-bold text-gray-800">{paginaAtual}</span> de <span className="font-bold text-gray-800">{Math.max(1, Math.ceil(totalRegistros / ITENS_POR_PAGINA))}</span>
+              </span>
               <button 
                 onClick={() => setPaginaAtual(p => Math.max(1, p - 1))}
                 disabled={paginaAtual === 1}
-                className="p-2 bg-white border border-gray-300 rounded-lg disabled:opacity-50 hover:bg-gray-50"
+                className="p-2 bg-white border border-gray-300 rounded-lg disabled:opacity-50 hover:bg-gray-100 transition-colors"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <button 
                 onClick={() => setPaginaAtual(p => p + 1)}
-                disabled={leituras.length < ITENS_POR_PAGINA}
-                className="p-2 bg-white border border-gray-300 rounded-lg disabled:opacity-50 hover:bg-gray-50"
+                disabled={ate >= totalRegistros}
+                className="p-2 bg-white border border-gray-300 rounded-lg disabled:opacity-50 hover:bg-gray-100 transition-colors"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>

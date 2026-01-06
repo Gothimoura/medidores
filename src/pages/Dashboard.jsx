@@ -43,7 +43,7 @@ const CustomTooltip = ({ active, payload, label, tipo }) => {
 }
 
 export default function Dashboard() {
-  const { tipoAtivo, setTipoAtivo } = useTheme()
+  const { tipoAtivo, setTipoAtivo, dataVersion } = useTheme()
   const [loading, setLoading] = useState(true)
   const [allData, setAllData] = useState([])
   
@@ -177,7 +177,7 @@ export default function Dashboard() {
     }
     fetchDashboard()
     fetchFilterOptions()
-  }, [tipoAtivo, dataCorteStr, dataFimStr])
+  }, [tipoAtivo, dataCorteStr, dataFimStr, dataVersion])
 
   // Aplica filtros
   const rawData = useMemo(() => {
