@@ -1,4 +1,5 @@
 import { Outlet, useNavigate } from 'react-router-dom'
+import { useMemo } from 'react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { LogOut } from 'lucide-react'
@@ -16,6 +17,18 @@ export default function Layout() {
     navigate('/login')
   }
 
+  const roleDisplayMap = {
+    user: 'Operacional',
+    n1: 'Operacional',
+    admin: 'Admin',
+    super_admin: 'Master',
+  }
+
+  // Memoizamos as animações para que não sejam recriadas a cada navegação,
+  // evitando que a animação de fundo reinicie desnecessariamente.
+  const memoizedChuva = useMemo(() => <ChuvaAnimation />, [])
+  const memoizedRaios = useMemo(() => <RaiosAnimation />, [])
+
   return (
     // Adicionamos pb-24 sempre, para o conteúdo não ficar escondido atrás do menu fixo no PC também
     <div className={`min-h-screen transition-all pb-24 ${
@@ -32,7 +45,7 @@ export default function Layout() {
       }`}>
         
         {/* Animação de fundo */}
-        {tipoAtivo === 'agua' ? <ChuvaAnimation /> : <RaiosAnimation />}
+        {tipoAtivo === 'agua' ? memoizedChuva : memoizedRaios}
         
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex items-center justify-between relative z-10">
           <div>
@@ -54,7 +67,7 @@ export default function Layout() {
                 ? 'bg-white/20 text-white'
                 : 'bg-yellow-600/20 text-yellow-800'
             }`}>
-              {user?.role === 'n1' ? 'Operacional' : 'Admin'}
+              {roleDisplayMap[user?.role] || 'Usuário'}
             </div>
 
             {/* BOTÃO DE SAIR */}

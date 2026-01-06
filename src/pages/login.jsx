@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Scanner } from '@yudiel/react-qr-scanner'
@@ -116,10 +116,14 @@ export default function Login() {
     }
   }
 
+  // Memoiza a animação para que ela não seja recriada a cada renderização do formulário.
+  // Isso impede que a animação "pisque" ou reinicie ao digitar nos campos.
+  const backgroundAnimation = useMemo(() => <MixedAnimation />, [])
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
       {/* Animação Mista - Chuva + Raios */}
-      <MixedAnimation />
+      {backgroundAnimation}
       
       <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden relative z-10">
         

@@ -18,6 +18,12 @@ export default function GerenciarUsuarios() {
   // Verifica se o usuário tem permissão (admin ou role específica)
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
 
+  const roleDisplayMap = {
+    user: 'Operacional',
+    admin: 'Admin',
+    super_admin: 'Master',
+  }
+
   useEffect(() => {
     if (!isAdmin) {
       setMensagem({ tipo: 'erro', texto: 'Você não tem permissão para acessar esta página.' })
@@ -69,8 +75,7 @@ export default function GerenciarUsuarios() {
           email: editForm.email,
           role: editForm.role,
           access_medicoes: editForm.access_medicoes,
-          access_dp_rh: editForm.access_dp_rh,
-          updated_at: new Date().toISOString()
+          access_dp_rh: editForm.access_dp_rh
         })
         .eq('id', usuarioId)
 
@@ -211,9 +216,9 @@ export default function GerenciarUsuarios() {
                               onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                             >
-                              <option value="user">User</option>
+                              <option value="user">Operacional</option>
                               <option value="admin">Admin</option>
-                              <option value="super_admin">Super Admin</option>
+                              <option value="super_admin">Master</option>
                             </select>
                           </td>
                           <td className="p-4 text-center">
@@ -274,11 +279,11 @@ export default function GerenciarUsuarios() {
                           </td>
                           <td className="p-4">
                             <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                              usuario.role === 'admin' || usuario.role === 'super_admin'
+                              usuario.role === 'admin' || usuario.role === 'super_admin' 
                                 ? 'bg-purple-100 text-purple-700'
                                 : 'bg-gray-100 text-gray-700'
                             }`}>
-                              {usuario.role || 'user'}
+                              {roleDisplayMap[usuario.role] || 'Usuário'}
                             </span>
                           </td>
                           <td className="p-4 text-center">
@@ -354,4 +359,3 @@ export default function GerenciarUsuarios() {
     </div>
   )
 }
-

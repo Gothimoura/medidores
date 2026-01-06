@@ -23,19 +23,24 @@ export function AuthProvider({ children }) {
             try {
               const { data: profileData, error } = await supabase
                 .from('profiles')
-                .select('name, role, email, access_medicoes, access_dp_rh')
+                .select('name, role, email, photo, export, view, access_medicoes, access_dp_rh')
                 .eq('id', session.user.id)
                 .single()
 
               if (error && error.code !== 'PGRST116') {
                 console.warn('[Auth] Erro ao buscar profile:', error.message)
               }
-
+              
               setUser({
                 id: session.user.id,
                 email: profileData?.email || session.user.email,
                 nome: profileData?.name || session.user.email,
                 role: profileData?.role || 'user',
+                // Adicionando novos campos do profile
+                photo: profileData?.photo,
+                export: profileData?.export,
+                view: profileData?.view,
+                // Mantendo a lógica de fallback para os campos de acesso
                 access_medicoes: profileData?.access_medicoes ?? true,
                 access_dp_rh: profileData?.access_dp_rh ?? false,
                 tipo: 'email_senha'
@@ -48,6 +53,9 @@ export function AuthProvider({ children }) {
                 email: session.user.email,
                 nome: session.user.email,
                 role: 'user',
+                photo: null,
+                export: null,
+                view: null,
                 access_medicoes: true,
                 access_dp_rh: false,
                 tipo: 'email_senha'
@@ -69,7 +77,7 @@ export function AuthProvider({ children }) {
           }
         } else {
           // Sem sessão Supabase - verifica token QR Code
-          const tokenSalvo = localStorage.getItem('gowork_token_n1')
+          const tokenSalvo = sessionStorage.getItem('gowork_token_n1')
           if (tokenSalvo) {
             await validarTokenN1(tokenSalvo)
           } else {
@@ -96,7 +104,7 @@ export function AuthProvider({ children }) {
         .single()
 
       if (error || !data) {
-        localStorage.removeItem('gowork_token_n1')
+        sessionStorage.removeItem('gowork_token_n1')
         setUser(null)
         setLoading(false)
         return
@@ -111,7 +119,7 @@ export function AuthProvider({ children }) {
       setLoading(false)
     } catch (error) {
       console.error('[Auth] Erro ao validar token:', error)
-      localStorage.removeItem('gowork_token_n1')
+      sessionStorage.removeItem('gowork_token_n1')
       setUser(null)
       setLoading(false)
     }
@@ -189,7 +197,7 @@ export function AuthProvider({ children }) {
         nome: data.descricao,
         tipo: 'qr_code' 
       })
-      localStorage.setItem('gowork_token_n1', tokenLido)
+      sessionStorage.setItem('gowork_token_n1', tokenLido)
       return { success: true }
     } catch (error) {
       console.error('[Auth] Erro loginViaQrCode:', error)
@@ -200,11 +208,43 @@ export function AuthProvider({ children }) {
   async function logout() {
     await supabase.auth.signOut()
     setUser(null)
-    localStorage.removeItem('gowork_token_n1')
+    sessionStorage.removeItem('gowork_token_n1')
+  }
+
+  // Nova função para salvar leituras de água ou energia
+  async function salvarLeitura(dadosLeitura) {
+    const { medidor_id, tipo, leitura, foto_url, observacao, justificativa } = dadosLeitura
+
+    if (!user) {
+      return { success: false, message: 'Usuário não autenticado.' }
+    }
+
+    const tabela = tipo === 'agua' ? 'med_hidrometros' : 'med_energia'
+
+    const dadosParaSalvar = {
+      medidor_id,
+      leitura,
+      foto_url,
+      observacao,
+      justificativa,
+      usuario: user.nome || user.email, // Usa o nome do usuário logado
+      // data_hora e created_at usarão o default do banco de dados
+    }
+
+    try {
+      const { error } = await supabase.from(tabela).insert(dadosParaSalvar)
+
+      if (error) throw error
+
+      return { success: true, message: 'Leitura salva com sucesso!' }
+    } catch (error) {
+      console.error(`[Auth] Erro ao salvar leitura em ${tabela}:`, error)
+      return { success: false, message: `Erro ao salvar leitura: ${error.message}` }
+    }
   }
 
   return (
-    <AuthContext.Provider value={{ user, criarConta, loginComEmailSenha, loginViaQrCode, logout, loading }}>
+    <AuthContext.Provider value={{ user, criarConta, loginComEmailSenha, loginViaQrCode, logout, loading, salvarLeitura }}>
       {children}
     </AuthContext.Provider>
   )

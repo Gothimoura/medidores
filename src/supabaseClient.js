@@ -22,7 +22,10 @@ if (!supabaseUrl || !supabaseAnonKey) {
 // Configuração seguindo as melhores práticas do Supabase
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: true,
+    // persistSession: false, // Isso causava o logout ao recarregar a página.
+    // A configuração abaixo usa o sessionStorage, que mantém o login durante
+    // a sessão da aba (incluindo reloads), mas esquece ao fechar a aba.
+    storage: sessionStorage,
     autoRefreshToken: true,
     detectSessionInUrl: true
   }

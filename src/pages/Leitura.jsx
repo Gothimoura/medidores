@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { supabase } from '../supabaseClient'
 import { Scanner } from '@yudiel/react-qr-scanner'
@@ -17,6 +18,7 @@ const VALOR_SEM_ANDAR = '___SEM_ANDAR___'
 
 export default function Leitura() {
   const navigate = useNavigate()
+  const { user, salvarLeitura } = useAuth()
   const { tipoAtivo, setTipoAtivo } = useTheme()
   const [todosMedidores, setTodosMedidores] = useState([])
   
@@ -138,46 +140,45 @@ export default function Leitura() {
     if (!medidorSelecionado) return
 
     async function fetchDadosMedidor() {
-      let nomeMedidor = todosMedidores.find(m => m.id == medidorSelecionado)?.nome
-      
-      if (!nomeMedidor) {
-         const { data } = await supabase.from('med_medidores').select('nome').eq('id', medidorSelecionado).single()
-         if(data) nomeMedidor = data.nome
+      // Busca histórico diretamente das tabelas corretas
+      const tabela = tipoAtivo === 'agua' ? 'med_hidrometros' : 'med_energia'
+
+      // Busca as últimas 11 leituras para calcular 10 períodos de consumo
+      const { data: historico, error } = await supabase
+        .from(tabela)
+        .select('leitura')
+        .eq('medidor_id', medidorSelecionado)
+        .order('data_hora', { ascending: false })
+        .limit(11)
+
+      if (error || !historico || historico.length === 0) {
+        setLeituraAnterior(0)
+        setMediaHistorica(null)
+        return
       }
 
-      if (!nomeMedidor) return
+      // A leitura mais recente é a "anterior" para o novo registro
+      setLeituraAnterior(Number(historico[0].leitura))
 
-      // Busca histórico diretamente das tabelas (sem views)
-      const tabela = tipoAtivo === 'agua' ? 'med_hidrometros' : 'med_energia'
-      const colunaLeitura = tipoAtivo === 'agua' ? 'leitura_hidrometro' : 'leitura_energia'
-      const colunaConsumo = tipoAtivo === 'agua' ? 'gasto_diario' : 'variacao'
+      // Calcula a média de consumo se houver dados suficientes
+      if (historico.length > 1) {
+        const consumos = []
+        for (let i = 0; i < historico.length - 1; i++) {
+          const atual = Number(historico[i].leitura)
+          const anterior = Number(historico[i + 1].leitura)
+          const consumoCalculado = atual - anterior
+          if (consumoCalculado >= 0) { // Ignora "viradas de relógio" para a média
+            consumos.push(consumoCalculado)
+          }
+        }
 
-      const { data: historico } = await supabase
-        .from(tabela)
-        .select(`${colunaLeitura}, ${colunaConsumo}`)
-        .eq('identificador_relogio', nomeMedidor)
-        .order('data_hora', { ascending: false })
-        .limit(10)
-
-      if (historico && historico.length > 0) {
-        // Pega a última leitura
-        const ultimaLeitura = historico[0][colunaLeitura]
-        setLeituraAnterior(ultimaLeitura ? Number(ultimaLeitura) : 0)
-        
-        // Calcula média dos consumos válidos
-        const consumosValidos = historico
-          .map(h => h[colunaConsumo])
-          .filter(c => c !== null && c !== '' && !isNaN(Number(c)) && Number(c) >= 0)
-          .map(c => Number(c))
-        
-        if (consumosValidos.length > 0) {
-          const soma = consumosValidos.reduce((a, b) => a + b, 0)
-          setMediaHistorica(soma / consumosValidos.length)
+        if (consumos.length > 0) {
+          const soma = consumos.reduce((a, b) => a + b, 0)
+          setMediaHistorica(soma / consumos.length)
         } else {
           setMediaHistorica(null)
         }
       } else {
-        setLeituraAnterior(0)
         setMediaHistorica(null)
       }
     }
@@ -210,19 +211,18 @@ export default function Leitura() {
     if (!podeEnviar) return
     setLoading(true)
     
+    let fotoUrl = null; // Garante que a variável exista
     try {
       const fileExt = foto.name.split('.').pop()
       const fileName = `${Date.now()}_${Math.random()}.${fileExt}`
+      // Upload para o bucket 'evidencias'
       const { error: uploadError } = await supabase.storage.from('evidencias').upload(fileName, foto)
       if (uploadError) throw uploadError
+      
+      // Obtenção da URL pública do bucket 'evidencias'
       const { data: urlData } = supabase.storage.from('evidencias').getPublicUrl(fileName)
-      
-      let medidorObj = todosMedidores.find(m => m.id == medidorSelecionado)
-      if(!medidorObj) {
-         const { data } = await supabase.from('med_medidores').select('*').eq('id', medidorSelecionado).single()
-         medidorObj = data
-      }
-      
+      fotoUrl = urlData.publicUrl;
+
       let obsFinal = ''
       if (isConsumoAlto) {
         const porcentagem = Math.round(((consumo / mediaHistorica) - 1) * 100)
@@ -232,42 +232,25 @@ export default function Leitura() {
         obsFinal = motivoValidacao === 'virada' ? 'Virada de Relógio' : 'Ajuste Manual'
       }
 
-      const dadosComuns = {
-        identificador_relogio: medidorObj.nome,
-        unidade: medidorObj.local_unidade,
-        andar: medidorObj.andar,
-        data_hora: new Date().toISOString(),
-        apenas_data: new Date().toISOString().split('T')[0],
-        foto_url: urlData.publicUrl,
-        usuario: 'App Web', 
+      const dadosLeitura = {
+        medidor_id: medidorSelecionado,
+        tipo: tipoAtivo,
+        leitura: valorAtualNum,
+        foto_url: fotoUrl,
         observacao: obsFinal,
         justificativa: isConsumoAlto ? justificativa : null
       }
 
-      // === AQUI ESTÁ A CORREÇÃO ===
-      // Agora salvamos a 'leitura anterior' e o 'gasto calculado' no banco
-      if (tipoAtivo === 'agua') {
-        await supabase.from('med_hidrometros').insert({ 
-          ...dadosComuns, 
-          leitura_hidrometro: leituraAtual.toString(),
-          hidrometro_anterior: leituraAnterior?.toString(), // Salva a anterior
-          gasto_diario: consumo.toString()                  // Salva o cálculo (Delta)
-        })
-      } else {
-        await supabase.from('med_energia').insert({ 
-          ...dadosComuns, 
-          leitura_energia: leituraAtual.toString(),
-          energia_anterior: leituraAnterior?.toString(),    // Salva a anterior
-          variacao: consumo.toString()                      // Salva o cálculo (Delta)
-        })
-      }
+      const resultado = await salvarLeitura(dadosLeitura)
+      if (!resultado.success) throw new Error(resultado.message)
       
       if (N8N_WEBHOOK_URL) {
-        fetch(N8N_WEBHOOK_URL, {
+        await fetch(N8N_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            ...dadosComuns,
+            ...dadosLeitura,
+            usuario: user?.nome || user?.email,
             leitura_atual: valorAtualNum,
             leitura_anterior: valorAnteriorNum,
             consumo: consumo,
@@ -291,7 +274,12 @@ export default function Leitura() {
       setTimeout(() => setMensagem(null), 3000)
 
     } catch (error) {
-      alert('Erro ao salvar: ' + error.message)
+      console.error('Erro ao salvar leitura:', error)
+      let friendlyMessage = 'Erro ao salvar: ' + error.message
+      if (error.message.includes('storage.objects.create')) {
+        friendlyMessage = 'Erro ao salvar a foto. Verifique se o bucket "evidencias" existe e se as permissões estão corretas.'
+      }
+      alert(friendlyMessage)
     } finally {
       setLoading(false)
     }

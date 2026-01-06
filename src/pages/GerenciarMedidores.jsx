@@ -52,14 +52,12 @@ function ModalDetalhes({ medidor, onClose }) {
       setLoading(true)
       try {
         const tabela = medidor.tipo === 'agua' ? 'med_hidrometros' : 'med_energia'
-        const colunaLeitura = medidor.tipo === 'agua' ? 'leitura_hidrometro' : 'leitura_energia'
-        const colunaConsumo = medidor.tipo === 'agua' ? 'gasto_diario' : 'variacao'
         
-        // Relacionamento direto: identificador_relogio = med_medidores.nome (FK)
+        // Busca as medições relacionadas pelo ID do medidor
         const { data, error, count } = await supabase
           .from(tabela)
-          .select(`id_registro, data_hora, apenas_data, created_at, ${colunaLeitura}, ${colunaConsumo}, usuario, foto_url, observacao, unidade, andar, identificador_relogio`, { count: 'exact' })
-          .eq('identificador_relogio', medidor.nome)
+          .select('id, created_at, leitura, usuario, foto_url, observacao', { count: 'exact' })
+          .eq('medidor_id', medidor.id)
           .order('created_at', { ascending: false, nullsFirst: false })
           .limit(20)
 
@@ -198,111 +196,19 @@ function ModalDetalhes({ medidor, onClose }) {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-100">
-                      <th className="p-3 text-left font-bold text-gray-600">Data</th>
-                      <th className="p-3 text-right font-bold text-gray-600">Anterior</th>
-                      <th className="p-3 text-right font-bold text-gray-600">Atual</th>
-                      <th className="p-3 text-right font-bold text-gray-600">Consumo</th>
+                      <th className="p-3 text-left font-bold text-gray-600">Data e Hora</th>
+                      <th className="p-3 text-right font-bold text-gray-600">Leitura</th>
+                      <th className="p-3 text-left font-bold text-gray-600">Usuário</th>
                       <th className="p-3 text-center font-bold text-gray-600">Foto</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {medicoes.map((m, i) => {
                       const unidadeMedida = medidor.tipo === 'agua' ? 'm³' : 'kWh'
-                      
-                      // Parser para dados concatenados do Forms legado
-                      const parseDadosConcatenados = () => {
-                        const str = m.identificador_relogio || ''
-                        
-                        // Detecta se é dado concatenado
-                        if (!str.includes(',') || (!str.includes('202') && !str.includes('[{'))) {
-                          return { isParsed: false }
-                        }
-                        
-                        try {
-                          // Extrai JSON da foto
-                          let fotoUrl = null
-                          const jsonRegex = /\[\{.*?\}\]/gs
-                          const jsonMatch = str.match(jsonRegex)
-                          if (jsonMatch) {
-                            try {
-                              const jsonStr = jsonMatch[0].replace(/""/g, '"')
-                              const parsed = JSON.parse(jsonStr)
-                              const obj = Array.isArray(parsed) ? parsed[0] : parsed
-                              fotoUrl = obj?.link || obj?.url || null
-                            } catch {}
-                          }
-                          
-                          // Remove JSON e separa por vírgula
-                          const strSemJson = str.replace(/,"\[\{.*?\}\]"/gs, ',FOTO,').replace(/\[\{.*?\}\]/gs, 'FOTO')
-                          const partes = strSemJson.split(',')
-                          
-                          // Estrutura: [0]=unidade, [1]=andar, [2]=nome, [3]=leitura, [4]=data, ..., [-2]=anterior, [-1]=consumo
-                          const leituraAtual = partes[3] && /^\d+$/.test(partes[3]) ? partes[3] : null
-                          const dataMatch = partes.find(p => /^\d{4}-\d{2}-\d{2}$/.test(p))
-                          
-                          const ultimoItem = partes[partes.length - 1]?.trim()
-                          const penultimoItem = partes[partes.length - 2]?.trim()
-                          const consumo = /^\d+$/.test(ultimoItem) ? ultimoItem : null
-                          const leituraAnterior = /^\d+$/.test(penultimoItem) ? penultimoItem : null
-                          
-                          return {
-                            leituraAtual,
-                            leituraAnterior,
-                            consumo,
-                            data: dataMatch,
-                            fotoUrl,
-                            isParsed: true
-                          }
-                        } catch (e) {
-                          console.warn('Erro ao parsear:', e)
-                          return { isParsed: false }
-                        }
-                      }
-                      
-                      const dadosParsed = parseDadosConcatenados()
-                      
-                      const leituraAtual = dadosParsed.isParsed ? dadosParsed.leituraAtual : (medidor.tipo === 'agua' ? m.leitura_hidrometro : m.leitura_energia)
-                      const leituraAnterior = dadosParsed.isParsed ? dadosParsed.leituraAnterior : (medidor.tipo === 'agua' ? m.hidrometro_anterior : m.energia_anterior)
-                      const consumo = dadosParsed.isParsed ? dadosParsed.consumo : (medidor.tipo === 'agua' ? m.gasto_diario : m.variacao)
-                      
-                      // Parsear data
-                      const parseData = () => {
-                        if (dadosParsed.isParsed && dadosParsed.data) {
-                          const [ano, mes, dia] = dadosParsed.data.split('-')
-                          return new Date(ano, mes - 1, dia)
-                        }
-                        if (m.apenas_data && /^\d{4}-\d{2}-\d{2}$/.test(m.apenas_data)) {
-                          const [ano, mes, dia] = m.apenas_data.split('-')
-                          return new Date(ano, mes - 1, dia)
-                        }
-                        if (m.created_at) {
-                          const d = new Date(m.created_at)
-                          if (!isNaN(d.getTime()) && d.getFullYear() > 2000) return d
-                        }
-                        return null
-                      }
-                      
-                      const dataObj = parseData()
+                      const dataObj = new Date(m.created_at)
                       const dataFormatada = dataObj 
-                        ? dataObj.toLocaleDateString('pt-BR')
+                        ? dataObj.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
                         : '-'
-                      
-                      // Foto URL
-                      const getFotoUrl = () => {
-                        if (dadosParsed.isParsed && dadosParsed.fotoUrl) return dadosParsed.fotoUrl
-                        if (!m.foto_url) return null
-                        if (m.foto_url.startsWith('http')) return m.foto_url
-                        if (m.foto_url.startsWith('[{') || m.foto_url.startsWith('{')) {
-                          try {
-                            const parsed = JSON.parse(m.foto_url)
-                            const obj = Array.isArray(parsed) ? parsed[0] : parsed
-                            return obj?.link || obj?.url || null
-                          } catch { return null }
-                        }
-                        return null
-                      }
-                      
-                      const fotoUrl = getFotoUrl()
                       
                       // Formata número
                       const formatNum = (val) => {
@@ -312,24 +218,17 @@ function ModalDetalhes({ medidor, onClose }) {
                       }
                       
                       return (
-                        <tr key={m.id_registro || i} className="hover:bg-gray-50">
+                        <tr key={m.id || i} className="hover:bg-gray-50">
                           <td className="p-3 whitespace-nowrap text-gray-700">{dataFormatada}</td>
-                          <td className="p-3 text-right font-mono text-gray-500">
-                            {formatNum(leituraAnterior)}
-                            {leituraAnterior && !isNaN(Number(leituraAnterior)) && <span className="text-[10px] text-gray-400 ml-1">{unidadeMedida}</span>}
-                          </td>
                           <td className="p-3 text-right font-mono font-semibold text-gray-900">
-                            {formatNum(leituraAtual)}
-                            {leituraAtual && !isNaN(Number(leituraAtual)) && <span className="text-[10px] text-gray-400 ml-1">{unidadeMedida}</span>}
+                            {formatNum(m.leitura)}
+                            {m.leitura && !isNaN(Number(m.leitura)) && <span className="text-[10px] text-gray-400 ml-1">{unidadeMedida}</span>}
                           </td>
-                          <td className="p-3 text-right font-mono font-bold text-emerald-600">
-                            {formatNum(consumo)}
-                            {consumo && !isNaN(Number(consumo)) && <span className="text-[10px] text-gray-400 ml-1">{unidadeMedida}</span>}
-                          </td>
+                          <td className="p-3 text-left text-gray-600">{m.usuario || '-'}</td>
                           <td className="p-3 text-center">
-                            {fotoUrl ? (
+                            {m.foto_url ? (
                               <a 
-                                href={fotoUrl} 
+                                href={m.foto_url} 
                                 target="_blank" 
                                 rel="noopener noreferrer" 
                                 className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs font-medium bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-lg transition-colors"
@@ -452,8 +351,7 @@ export default function GerenciarMedidores() {
           tipo: editForm.tipo,
           unidade: editForm.unidade,
           local_unidade: editForm.local_unidade,
-          andar: editForm.andar || null,
-          token: editForm.token || null
+          andar: editForm.andar || null
         })
         .eq('id', medidorId)
 
@@ -474,8 +372,6 @@ export default function GerenciarMedidores() {
 
   async function handleAdd() {
     try {
-      const token = editForm.token || generateToken()
-      
       const { error } = await supabase
         .from('med_medidores')
         .insert({
@@ -483,8 +379,8 @@ export default function GerenciarMedidores() {
           tipo: editForm.tipo,
           unidade: editForm.unidade,
           local_unidade: editForm.local_unidade,
-          andar: editForm.andar || null,
-          token: token
+          andar: editForm.andar || null
+          // O token é gerado automaticamente pelo banco de dados (default gen_random_uuid())
         })
 
       if (error) throw error
@@ -755,8 +651,7 @@ export default function GerenciarMedidores() {
                   tipo: 'agua',
                   unidade: '',
                   local_unidade: '',
-                  andar: '',
-                  token: generateToken()
+                  andar: ''
                 })
               }}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors"
@@ -811,25 +706,6 @@ export default function GerenciarMedidores() {
                   <option value="agua">Água</option>
                   <option value="energia">Energia</option>
                 </select>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Token (QR Code)</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={editForm.token}
-                    onChange={(e) => setEditForm({ ...editForm, token: e.target.value })}
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                    placeholder="MED-XXXXXXXX"
-                  />
-                  <button
-                    onClick={() => setEditForm({ ...editForm, token: generateToken() })}
-                    className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                    title="Gerar novo token"
-                  >
-                    <RefreshCw className="w-5 h-5" />
-                  </button>
-                </div>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Unidade</label>
@@ -1069,20 +945,13 @@ export default function GerenciarMedidores() {
                           </td>
                           <td className="p-4">
                             <div className="flex gap-2">
-                              <input
+                              <input // O token é um UUID gerado pelo banco, não deve ser editável.
                                 type="text"
                                 value={editForm.token}
-                                onChange={(e) => setEditForm({ ...editForm, token: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-mono"
-                                placeholder="Token"
+                                readOnly
+                                className="w-full px-3 py-2 border border-gray-200 bg-gray-100 rounded-lg text-sm font-mono text-gray-500 cursor-not-allowed"
+                                title="O token não pode ser editado"
                               />
-                              <button
-                                onClick={() => setEditForm({ ...editForm, token: generateToken() })}
-                                className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="Gerar novo token"
-                              >
-                                <RefreshCw className="w-4 h-4" />
-                              </button>
                             </div>
                           </td>
                           <td className="p-4">

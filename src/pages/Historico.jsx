@@ -9,6 +9,7 @@ import {
 import CustomSelect from '../components/CustomSelect'
 
 const ITENS_POR_PAGINA = 20
+const VALOR_SEM_ANDAR = '___SEM_ANDAR___'
 
 export default function Historico() {
   const { tipoAtivo, setTipoAtivo } = useTheme()
@@ -21,12 +22,14 @@ export default function Historico() {
 
   // Estados de Filtro
   const [termoBusca, setTermoBusca] = useState('')
-  const [filtroUnidade, setFiltroUnidade] = useState('')
+  const [filtroPredio, setFiltroPredio] = useState('')
   const [filtroAndar, setFiltroAndar] = useState('')
   
   // Filtros de Data
   const [dataInicio, setDataInicio] = useState('')
   const [dataFim, setDataFim] = useState('')
+
+  const [medidores, setMedidores] = useState([])
 
   // Listas para os Selects
   const [opcoesUnidades, setOpcoesUnidades] = useState([])
@@ -37,53 +40,71 @@ export default function Historico() {
 
   // Carregar Dados
   useEffect(() => {
+    // Carrega as opções de filtro uma vez
+    async function fetchMedidorOptions() {
+      const { data } = await supabase
+        .from('med_medidores')
+        .select('local_unidade, andar')
+        .eq('tipo', tipoAtivo)
+
+      if (data) {
+        const unidades = [...new Set(data.map(i => i.local_unidade).filter(Boolean))].sort()
+        setOpcoesUnidades(unidades.map(u => ({ value: u, label: u })))
+        
+        const andares = [...new Set(data.map(i => i.andar).filter(Boolean))].sort()
+        setOpcoesAndares(andares.map(a => ({ value: a, label: a })))
+      }
+    }
+    fetchMedidorOptions()
     fetchLeituras()
-  }, [tipoAtivo, paginaAtual, filtroUnidade, filtroAndar, termoBusca, dataInicio, dataFim])
+  }, [tipoAtivo, paginaAtual, filtroPredio, filtroAndar, termoBusca, dataInicio, dataFim])
 
   async function fetchLeituras() {
     setLoading(true)
     
     const tabela = tipoAtivo === 'agua' ? 'med_hidrometros' : 'med_energia'
 
+    // A consulta agora é relacional para buscar o nome do medidor
     let query = supabase
       .from(tabela)
-      .select('*', { count: 'exact' })
+      .select('*, medidor:med_medidores(nome, local_unidade, andar)', { count: 'exact' })
       .order('created_at', { ascending: false, nullsFirst: false })
 
-    // Filtros de Texto e Select
-    if (filtroUnidade) query = query.eq('unidade', filtroUnidade)
-    if (filtroAndar) query = query.eq('andar', filtroAndar)
-    if (termoBusca) query = query.ilike('identificador_relogio', `%${termoBusca}%`)
+    // Filtros
+    if (filtroPredio) query = query.eq('medidor.local_unidade', filtroPredio)
+    if (filtroAndar) {
+      if (filtroAndar === VALOR_SEM_ANDAR) {
+        query = query.is('medidor.andar', null)
+      } else {
+        query = query.eq('medidor.andar', filtroAndar)
+      }
+    }
+    if (termoBusca) query = query.ilike('medidor.nome', `%${termoBusca}%`)
 
-    // --- FILTRO DE DATA (usando apenas_data no formato YYYY-MM-DD) ---
+    // Filtro de data
     if (dataInicio) {
-      query = query.gte('apenas_data', dataInicio)
+      query = query.gte('created_at', `${dataInicio}T00:00:00`)
     }
     
     if (dataFim) {
-      query = query.lte('apenas_data', dataFim)
+      query = query.lte('created_at', `${dataFim}T23:59:59`)
     }
 
     // Paginação
     const de = (paginaAtual - 1) * ITENS_POR_PAGINA
     const ate = de + ITENS_POR_PAGINA - 1
     query = query.range(de, ate)
-
+    
     const { data, count, error } = await query
 
     if (error) {
       console.error('Erro ao buscar:', error)
     } else {
-      setLeituras(data)
-      setTotalRegistros(count)
-      
-      if (opcoesUnidades.length === 0 && data.length > 0) {
-        const unidades = [...new Set(data.map(i => i.unidade).filter(Boolean))].sort()
-        setOpcoesUnidades(unidades.map(u => ({ value: u, label: u })))
-        
-        const andares = [...new Set(data.map(i => i.andar).filter(Boolean))].sort()
-        setOpcoesAndares(andares.map(a => ({ value: a, label: a })))
-      }
+      // Calcula o consumo para cada linha (leitura atual - leitura anterior)
+      // Esta é uma simplificação. Para um cálculo preciso, precisaríamos da leitura anterior real.
+      // Por enquanto, exibiremos apenas a leitura atual.
+      setLeituras(data || [])
+      setTotalRegistros(count || 0)
     }
     setLoading(false)
   }
@@ -91,12 +112,12 @@ export default function Historico() {
   const handleDelete = async (id) => {
     if (!window.confirm('Tem certeza que deseja excluir este registro?')) return
     const tabela = tipoAtivo === 'agua' ? 'med_hidrometros' : 'med_energia'
-    const { error } = await supabase.from(tabela).delete().eq('id_registro', id)
+    const { error } = await supabase.from(tabela).delete().eq('id', id)
     if (!error) fetchLeituras()
   }
 
   const limparFiltros = () => {
-    setFiltroUnidade('')
+    setFiltroPredio('')
     setFiltroAndar('')
     setTermoBusca('')
     setDataInicio('')
@@ -179,9 +200,9 @@ export default function Historico() {
           <div className="w-full lg:w-40">
             <label className="block text-[10px] uppercase font-bold text-gray-400 mb-1 ml-1">Unidade</label>
             <CustomSelect 
-              options={opcoesUnidades} 
-              value={filtroUnidade} 
-              onChange={setFiltroUnidade} 
+              options={opcoesUnidades}
+              value={filtroPredio}
+              onChange={setFiltroPredio}
               placeholder="Todas"
               icon={Building}
             />
@@ -197,7 +218,7 @@ export default function Historico() {
             />
           </div>
 
-          {(filtroUnidade || filtroAndar || termoBusca || dataInicio || dataFim) && (
+          {(filtroPredio || filtroAndar || termoBusca || dataInicio || dataFim) && (
             <button 
               onClick={limparFiltros}
               className="px-4 py-3 text-red-600 bg-red-50 hover:bg-red-100 rounded-xl text-sm font-semibold transition-colors h-[46px] mt-auto"
@@ -214,10 +235,10 @@ export default function Historico() {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Data</th>
-                  <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Medidor</th>
-                  <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Anterior</th>
-                  <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Atual</th>
-                  <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Consumo</th>
+                  <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Unidade</th>
+                  <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Andar</th>
+                  <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Relógio</th>
+                  <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Leitura</th>
                   <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Foto</th>
                   <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Ações</th>
                 </tr>
@@ -234,140 +255,11 @@ export default function Historico() {
                 ) : (
                   leituras.map((item) => {
                     const unidadeMedida = tipoAtivo === 'agua' ? 'm³' : 'kWh'
-                    
-                    // Parser para dados concatenados do Forms legado
-                    // Formato: "unidade,andar,nome,leitura,data1,data2,[{foto JSON}],usuario,id1,num,id2,...,leitura_anterior,consumo"
-                    const parseDadosConcatenados = () => {
-                      const str = item.identificador_relogio || ''
-                      
-                      // Detecta se é dado concatenado (tem vírgula + data ou JSON)
-                      if (!str.includes(',') || (!str.includes('202') && !str.includes('[{'))) {
-                        return { isParsed: false }
-                      }
-                      
-                      try {
-                        // 1. Extrai JSON da foto (está entre [{ e }])
-                        let fotoUrl = null
-                        const jsonRegex = /\[\{.*?\}\]/gs
-                        const jsonMatch = str.match(jsonRegex)
-                        if (jsonMatch) {
-                          try {
-                            // Remove as aspas duplas escapadas
-                            const jsonStr = jsonMatch[0].replace(/""/g, '"')
-                            const parsed = JSON.parse(jsonStr)
-                            const obj = Array.isArray(parsed) ? parsed[0] : parsed
-                            fotoUrl = obj?.link || obj?.url || null
-                          } catch {}
-                        }
-                        
-                        // 2. Remove o JSON para parsear o resto
-                        const strSemJson = str.replace(/,"\[\{.*?\}\]"/gs, ',FOTO,').replace(/\[\{.*?\}\]/gs, 'FOTO')
-                        const partes = strSemJson.split(',')
-                        
-                        // 3. Estrutura conhecida:
-                        // [0] = unidade (ex: "Ministro")
-                        // [1] = andar (ex: "Térreo")  
-                        // [2] = nome medidor (ex: "MinistroTérreo")
-                        // [3] = leitura atual (ex: "3283")
-                        // [4] = data (ex: "2025-12-03")
-                        // [5] = data2
-                        // [6] = FOTO (placeholder)
-                        // [7] = usuario/email
-                        // [...] = identificadores antigos
-                        // [-2] = leitura anterior (ex: "3280")
-                        // [-1] = consumo (ex: "3")
-                        
-                        const nomeMedidor = partes[2] || (partes[0] + partes[1]) || str.split(',')[0]
-                        const leituraAtual = partes[3] && /^\d+$/.test(partes[3]) ? partes[3] : null
-                        const dataMatch = partes.find(p => /^\d{4}-\d{2}-\d{2}$/.test(p))
-                        
-                        // Últimos dois campos são leitura anterior e consumo
-                        const ultimoItem = partes[partes.length - 1]?.trim()
-                        const penultimoItem = partes[partes.length - 2]?.trim()
-                        
-                        // Consumo é o último (geralmente número pequeno)
-                        const consumo = /^\d+$/.test(ultimoItem) ? ultimoItem : null
-                        // Leitura anterior é o penúltimo
-                        const leituraAnterior = /^\d+$/.test(penultimoItem) ? penultimoItem : null
-                        
-                        return {
-                          nomeMedidor: nomeMedidor?.trim(),
-                          leituraAtual,
-                          leituraAnterior,
-                          consumo,
-                          data: dataMatch,
-                          fotoUrl,
-                          isParsed: true
-                        }
-                      } catch (e) {
-                        console.warn('Erro ao parsear:', e)
-                        return { isParsed: false }
-                      }
-                    }
-                    
-                    const dadosParsed = parseDadosConcatenados()
-                    
-                    // Usa dados parseados se disponíveis, senão usa campos normais
-                    const nomeMedidor = dadosParsed.isParsed ? dadosParsed.nomeMedidor : item.identificador_relogio
-                    const consumo = dadosParsed.isParsed ? dadosParsed.consumo : (tipoAtivo === 'agua' ? item.gasto_diario : item.variacao)
-                    const leituraAtual = dadosParsed.isParsed ? dadosParsed.leituraAtual : (tipoAtivo === 'agua' ? item.leitura_hidrometro : item.leitura_energia)
-                    const leituraAnterior = dadosParsed.isParsed ? dadosParsed.leituraAnterior : (tipoAtivo === 'agua' ? item.hidrometro_anterior : item.energia_anterior)
                     const isAlerta = item.observacao?.includes('ALERTA') || item.justificativa
-
-                    // Função para parsear data (pode vir em vários formatos)
-                    const parseData = () => {
-                      // Se veio do parser, usa a data extraída
-                      if (dadosParsed.isParsed && dadosParsed.data) {
-                        const [ano, mes, dia] = dadosParsed.data.split('-')
-                        return new Date(ano, mes - 1, dia)
-                      }
-                      // Tenta usar apenas_data primeiro (formato YYYY-MM-DD)
-                      if (item.apenas_data && /^\d{4}-\d{2}-\d{2}$/.test(item.apenas_data)) {
-                        const [ano, mes, dia] = item.apenas_data.split('-')
-                        return new Date(ano, mes - 1, dia)
-                      }
-                      // Tenta usar created_at (timestamp real)
-                      if (item.created_at) {
-                        const d = new Date(item.created_at)
-                        if (!isNaN(d.getTime()) && d.getFullYear() > 2000) return d
-                      }
-                      // Tenta usar data_hora
-                      if (item.data_hora) {
-                        if (/^\d{4}-\d{2}-\d{2}/.test(item.data_hora)) {
-                          const d = new Date(item.data_hora)
-                          if (!isNaN(d.getTime()) && d.getFullYear() > 2000) return d
-                        }
-                        if (/^\d{2}\/\d{2}\/\d{4}/.test(item.data_hora)) {
-                          const [dia, mes, ano] = item.data_hora.split(/[\/\s]/)
-                          return new Date(ano, mes - 1, dia)
-                        }
-                      }
-                      return null
-                    }
-                    
-                    const dataFormatada = parseData()
-                    
-                    // Função para extrair URL da foto
-                    const getFotoUrl = () => {
-                      // Se veio do parser, usa a URL extraída
-                      if (dadosParsed.isParsed && dadosParsed.fotoUrl) {
-                        return dadosParsed.fotoUrl
-                      }
-                      if (!item.foto_url) return null
-                      if (item.foto_url.startsWith('http')) return item.foto_url
-                      if (item.foto_url.startsWith('[{') || item.foto_url.startsWith('{')) {
-                        try {
-                          const parsed = JSON.parse(item.foto_url)
-                          const obj = Array.isArray(parsed) ? parsed[0] : parsed
-                          return obj?.link || obj?.url || obj?.foto_url || null
-                        } catch {
-                          return null
-                        }
-                      }
-                      return null
-                    }
-                    
-                    const fotoUrl = getFotoUrl()
+                    const dataObj = new Date(item.created_at)
+                    const dataFormatada = !isNaN(dataObj.getTime())
+                      ? dataObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                      : '-'
                     
                     // Formata número ou retorna "-"
                     const formatNum = (val) => {
@@ -377,60 +269,33 @@ export default function Historico() {
                     }
 
                     return (
-                      <tr key={item.id_registro} className={`hover:bg-gray-50 transition-colors ${isAlerta ? 'bg-red-50/30' : ''}`}>
+                      <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${isAlerta ? 'bg-red-50/30' : ''}`}>
                         {/* Data */}
                         <td className="p-4 text-sm text-gray-600 whitespace-nowrap">
                           <div className="flex items-center gap-2">
                             <Calendar className="w-4 h-4 text-gray-400" />
-                            {dataFormatada ? (
-                              <span>{dataFormatada.toLocaleDateString('pt-BR')}</span>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
+                            <span>{dataFormatada}</span>
                           </div>
                         </td>
                         
                         {/* Medidor */}
-                        <td className="p-4">
-                          <div className="font-medium text-gray-900">{nomeMedidor || '-'}</div>
-                          <div className="text-xs text-gray-500">
-                            {item.unidade && !dadosParsed.isParsed && <span>{item.unidade}</span>}
-                            {item.unidade && item.andar && !dadosParsed.isParsed && <span> • </span>}
-                            {item.andar && !dadosParsed.isParsed && <span>{item.andar}</span>}
-                          </div>
-                        </td>
+                        <td className="p-4 text-sm text-gray-600">{item.medidor?.local_unidade || '-'}</td>
+                        <td className="p-4 text-sm text-gray-600">{item.medidor?.andar || '-'}</td>
+                        <td className="p-4 text-sm font-medium text-gray-900">{item.medidor?.nome || 'Não encontrado'}</td>
                         
-                        {/* Leitura Anterior */}
+                        {/* Leitura */}
                         <td className="p-4 text-right">
-                          <span className="font-mono text-gray-500">{formatNum(leituraAnterior)}</span>
-                          {leituraAnterior && leituraAnterior !== '-' && !isNaN(Number(leituraAnterior)) && (
-                            <span className="text-[10px] text-gray-400 ml-1">{unidadeMedida}</span>
-                          )}
-                        </td>
-                        
-                        {/* Leitura Atual */}
-                        <td className="p-4 text-right">
-                          <span className="font-mono font-semibold text-gray-900">{formatNum(leituraAtual)}</span>
-                          {leituraAtual && !isNaN(Number(leituraAtual)) && (
-                            <span className="text-[10px] text-gray-400 ml-1">{unidadeMedida}</span>
-                          )}
-                        </td>
-                        
-                        {/* Consumo */}
-                        <td className="p-4 text-right">
-                          <span className={`font-mono font-bold ${isAlerta ? 'text-red-600' : 'text-emerald-600'}`}>
-                            {formatNum(consumo)}
-                          </span>
-                          {consumo && !isNaN(Number(consumo)) && (
+                          <span className="font-mono font-semibold text-gray-900">{formatNum(item.leitura)}</span>
+                          {item.leitura && !isNaN(Number(item.leitura)) && (
                             <span className="text-[10px] text-gray-400 ml-1">{unidadeMedida}</span>
                           )}
                         </td>
                         
                         {/* Foto */}
                         <td className="p-4 text-center">
-                          {fotoUrl ? (
+                          {item.foto_url ? (
                             <a 
-                              href={fotoUrl} 
+                              href={item.foto_url} 
                               target="_blank" 
                               rel="noopener noreferrer" 
                               className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs font-medium bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"
@@ -461,7 +326,7 @@ export default function Historico() {
                               </button>
                             )}
                             <button 
-                              onClick={() => handleDelete(item.id_registro)}
+                              onClick={() => handleDelete(item.id)}
                               className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"
                               title="Excluir"
                             >
