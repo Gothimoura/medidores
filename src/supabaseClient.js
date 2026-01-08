@@ -20,13 +20,23 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 // Configuração seguindo as melhores práticas do Supabase
+// Usa localStorage por padrão para persistência entre sessões
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    // persistSession: false, // Isso causava o logout ao recarregar a página.
-    // A configuração abaixo usa o sessionStorage, que mantém o login durante
-    // a sessão da aba (incluindo reloads), mas esquece ao fechar a aba.
-    storage: sessionStorage,
+    // persistSession: true é o padrão e mantém a sessão entre recarregamentos
+    // Usa localStorage automaticamente para persistir a sessão
     autoRefreshToken: true,
-    detectSessionInUrl: true
+    detectSessionInUrl: true,
+    persistSession: true, // Garante persistência da sessão
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    storageKey: 'gowork-supabase-auth-token',
+    // Configurações adicionais para mobile
+    flowType: 'pkce' // Usa PKCE para melhor segurança e compatibilidade mobile
+  },
+  // Configurações globais do cliente
+  global: {
+    headers: {
+      'x-client-info': 'gowork-medicao@1.0.0'
+    }
   }
 })

@@ -20,9 +20,14 @@ function RotaPrivada({ children }) {
   const [forceRedirect, setForceRedirect] = useState(false)
   
   useEffect(() => {
+    console.log('[App] Estado da rota privada - loading:', loading, 'user:', user ? 'SIM' : 'NÃO')
+  }, [loading, user])
+  
+  useEffect(() => {
     // Timeout de aviso após 3 segundos
     const timer = setTimeout(() => {
       if (loading) {
+        console.warn('[App] Loading demorando mais que 3 segundos')
         setTimeoutReached(true)
       }
     }, 3000)
@@ -30,18 +35,19 @@ function RotaPrivada({ children }) {
   }, [loading])
   
   useEffect(() => {
-    // Timeout absoluto após 8 segundos - força redirecionamento (reduzido de 10s)
+    // Timeout absoluto após 10 segundos - força redirecionamento (aumentado para mobile)
     const forceTimeout = setTimeout(() => {
       if (loading) {
-        console.warn('[App] Timeout de autenticação: redirecionando para login')
+        console.error('[App] Timeout absoluto de autenticação: redirecionando para login')
         setForceRedirect(true)
       }
-    }, 8000)
+    }, 10000)
     return () => clearTimeout(forceTimeout)
   }, [loading])
 
   // Se o timeout absoluto foi atingido, redireciona imediatamente
   if (forceRedirect) {
+    console.error('[App] Forçando redirecionamento para login')
     return <Navigate to="/login" replace />
   }
   
@@ -58,7 +64,12 @@ function RotaPrivada({ children }) {
               <br />
               <button 
                 onClick={() => {
-                  sessionStorage.clear()
+                  try {
+                    localStorage.clear()
+                    sessionStorage.clear()
+                  } catch (e) {
+                    console.warn('[App] Erro ao limpar storage:', e)
+                  }
                   window.location.href = '/login'
                 }} 
                 className="mt-2 text-blue-600 hover:underline font-semibold"
@@ -74,8 +85,11 @@ function RotaPrivada({ children }) {
   
   // Se não há usuário após o loading terminar, redireciona para login
   if (!user) {
+    console.log('[App] Nenhum usuário encontrado, redirecionando para login')
     return <Navigate to="/login" replace />
   }
+  
+  console.log('[App] Usuário autenticado:', user.tipo, user.nome)
 
   // Verifica se o usuário tem acesso ao sistema de medições
   // Admins sempre têm acesso, QR Code (n1) sempre tem acesso

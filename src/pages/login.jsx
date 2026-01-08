@@ -23,10 +23,11 @@ export default function Login() {
   // Redireciona se já estiver logado
   useEffect(() => {
     if (user && !loading) {
-      // Pequeno delay para garantir que o estado foi atualizado
+      console.log('[Login] Usuário autenticado, redirecionando...', user.tipo)
+      // Pequeno delay para garantir que o estado foi atualizado (aumentado para mobile)
       const timer = setTimeout(() => {
         navigate('/', { replace: true })
-      }, 100)
+      }, 300)
       return () => clearTimeout(timer)
     }
   }, [user, loading, navigate])
