@@ -7,6 +7,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const inicializadoRef = useRef(false)
+  const processandoLoginRef = useRef(false) // Evita conflitos durante login manual
 
   // Função auxiliar para validar formato de token (UUID ou string válida)
   function validarFormatoToken(token) {
@@ -159,12 +160,28 @@ export function AuthProvider({ children }) {
       async (event, session) => {
         // Ignora eventos durante a inicialização
         if (!inicializadoRef.current) return
+        
+        // Ignora eventos SIGNED_IN se já estamos processando um login manual
+        if (event === 'SIGNED_IN' && processandoLoginRef.current) {
+          return
+        }
 
         if (event === 'SIGNED_IN' && session?.user) {
           setLoading(true)
           const perfil = await carregarPerfilUsuario(session.user.id)
           if (perfil) {
             setUser(perfil)
+          } else {
+            // Se não há perfil, ainda permite login básico
+            setUser({
+              id: session.user.id,
+              email: session.user.email,
+              nome: session.user.email,
+              role: 'user',
+              tipo: 'email_senha',
+              access_medicoes: false,
+              access_dp_rh: false
+            })
           }
           setLoading(false)
         } else if (event === 'SIGNED_OUT') {
@@ -172,6 +189,7 @@ export function AuthProvider({ children }) {
           sessionStorage.removeItem('gowork_token_n1')
           setUser(null)
           setLoading(false)
+          processandoLoginRef.current = false
         } else if (event === 'TOKEN_REFRESHED' && session?.user) {
           // Atualiza sessão sem recarregar tudo
           const perfil = await carregarPerfilUsuario(session.user.id)
@@ -253,6 +271,9 @@ export function AuthProvider({ children }) {
         return { success: false, message: 'Email e senha são obrigatórios.' }
       }
 
+      // Marca que estamos processando um login manual
+      processandoLoginRef.current = true
+
       // Limpa qualquer token QR Code anterior
       sessionStorage.removeItem('gowork_token_n1')
 
@@ -263,10 +284,12 @@ export function AuthProvider({ children }) {
 
       if (error) {
         console.error('[Auth] Erro no login:', error)
+        processandoLoginRef.current = false
         return { success: false, message: error.message || 'Credenciais inválidas.' }
       }
 
       if (!data.user) {
+        processandoLoginRef.current = false
         return { success: false, message: 'Erro ao fazer login. Tente novamente.' }
       }
 
@@ -275,13 +298,29 @@ export function AuthProvider({ children }) {
       const perfil = await carregarPerfilUsuario(data.user.id)
       if (perfil) {
         setUser(perfil)
+        // Aguarda um ciclo de renderização para garantir que o estado foi atualizado
+        await new Promise(resolve => setTimeout(resolve, 150))
+      } else {
+        // Se não há perfil, ainda permite login básico
+        setUser({
+          id: data.user.id,
+          email: data.user.email,
+          nome: data.user.email,
+          role: 'user',
+          tipo: 'email_senha',
+          access_medicoes: false,
+          access_dp_rh: false
+        })
+        await new Promise(resolve => setTimeout(resolve, 150))
       }
       setLoading(false)
+      processandoLoginRef.current = false
 
       return { success: true }
     } catch (error) {
       console.error('[Auth] Erro loginComEmailSenha:', error)
       setLoading(false)
+      processandoLoginRef.current = false
       return { success: false, message: error.message || 'Erro inesperado ao fazer login.' }
     }
   }
@@ -299,6 +338,9 @@ export function AuthProvider({ children }) {
         return { success: false, message: 'Formato de QR Code inválido.' }
       }
 
+      // Marca que estamos processando um login manual
+      processandoLoginRef.current = true
+
       // Limpa qualquer sessão Supabase anterior
       await supabase.auth.signOut()
 
@@ -310,6 +352,7 @@ export function AuthProvider({ children }) {
         .single()
 
       if (error) {
+        processandoLoginRef.current = false
         if (error.code === 'PGRST116') {
           return { success: false, message: 'QR Code não encontrado ou inativo.' }
         }
@@ -318,9 +361,11 @@ export function AuthProvider({ children }) {
       }
 
       if (!data) {
+        processandoLoginRef.current = false
         return { success: false, message: 'QR Code não encontrado ou inativo.' }
       }
 
+      setLoading(true)
       setUser({ 
         id: data.id, 
         role: 'n1', 
@@ -328,9 +373,15 @@ export function AuthProvider({ children }) {
         tipo: 'qr_code' 
       })
       sessionStorage.setItem('gowork_token_n1', tokenLimpo)
+      // Aguarda um ciclo de renderização para garantir que o estado foi atualizado
+      await new Promise(resolve => setTimeout(resolve, 150))
+      setLoading(false)
+      processandoLoginRef.current = false
       return { success: true }
     } catch (error) {
       console.error('[Auth] Erro loginViaQrCode:', error)
+      setLoading(false)
+      processandoLoginRef.current = false
       return { success: false, message: error.message || 'Erro inesperado ao validar QR Code.' }
     }
   }

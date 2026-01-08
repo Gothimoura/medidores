@@ -22,10 +22,14 @@ export default function Login() {
 
   // Redireciona se já estiver logado
   useEffect(() => {
-    if (user) {
-      navigate('/')
+    if (user && !loading) {
+      // Pequeno delay para garantir que o estado foi atualizado
+      const timer = setTimeout(() => {
+        navigate('/', { replace: true })
+      }, 100)
+      return () => clearTimeout(timer)
     }
-  }, [user, navigate])
+  }, [user, loading, navigate])
 
   const handleCriarConta = async (e) => {
     e.preventDefault()
@@ -80,16 +84,22 @@ export default function Login() {
     }
 
     setLoading(true)
-    const res = await loginComEmailSenha(email, senha)
-    
-    if (res.success) {
-      setSucesso('Login realizado! Redirecionando...')
-      // Timeout de segurança: se não redirecionar em 5s, libera o loading
-      setTimeout(() => {
+    try {
+      const res = await loginComEmailSenha(email, senha)
+      
+      if (res.success) {
+        setSucesso('Login realizado! Redirecionando...')
+        // Aguarda um pouco para garantir que o estado foi atualizado
+        await new Promise(resolve => setTimeout(resolve, 300))
+        // Redireciona explicitamente
+        navigate('/', { replace: true })
+      } else {
+        setErro(res.message || 'Erro ao fazer login. Verifique suas credenciais.')
         setLoading(false)
-      }, 5000)
-    } else {
-      setErro(res.message || 'Erro ao fazer login. Verifique suas credenciais.')
+      }
+    } catch (error) {
+      console.error('[Login] Erro no handleLoginEmailSenha:', error)
+      setErro('Erro inesperado ao fazer login. Tente novamente.')
       setLoading(false)
     }
   }
@@ -163,16 +173,22 @@ export default function Login() {
     setErro('')
     setSucesso('')
     
-    const res = await loginViaQrCode(tokenLido)
-    
-    if (res.success) {
-      setSucesso('QR Code validado! Redirecionando...')
-      // Timeout de segurança: se não redirecionar em 5s, libera o loading
-      setTimeout(() => {
+    try {
+      const res = await loginViaQrCode(tokenLido)
+      
+      if (res.success) {
+        setSucesso('QR Code validado! Redirecionando...')
+        // Aguarda um pouco para garantir que o estado foi atualizado
+        await new Promise(resolve => setTimeout(resolve, 300))
+        // Redireciona explicitamente
+        navigate('/', { replace: true })
+      } else {
+        setErro(res.message || 'QR Code não reconhecido no sistema.')
         setLoading(false)
-      }, 5000)
-    } else {
-      setErro(res.message || 'QR Code não reconhecido no sistema.')
+      }
+    } catch (error) {
+      console.error('[Login] Erro no handleScan:', error)
+      setErro('Erro inesperado ao validar QR Code. Tente novamente.')
       setLoading(false)
     }
   }

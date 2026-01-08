@@ -30,13 +30,13 @@ function RotaPrivada({ children }) {
   }, [loading])
   
   useEffect(() => {
-    // Timeout absoluto após 10 segundos - força redirecionamento
+    // Timeout absoluto após 8 segundos - força redirecionamento (reduzido de 10s)
     const forceTimeout = setTimeout(() => {
       if (loading) {
         console.warn('[App] Timeout de autenticação: redirecionando para login')
         setForceRedirect(true)
       }
-    }, 10000)
+    }, 8000)
     return () => clearTimeout(forceTimeout)
   }, [loading])
 
@@ -45,6 +45,7 @@ function RotaPrivada({ children }) {
     return <Navigate to="/login" replace />
   }
   
+  // Se está carregando, mostra loading
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 gap-4">
@@ -71,6 +72,7 @@ function RotaPrivada({ children }) {
     )
   }
   
+  // Se não há usuário após o loading terminar, redireciona para login
   if (!user) {
     return <Navigate to="/login" replace />
   }
