@@ -8,6 +8,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const inicializadoRef = useRef(false)
   const processandoLoginRef = useRef(false) // Evita conflitos durante login manual
+  const loadingTimeoutRef = useRef(null) // Ref para timeout de segurança
 
   // Função auxiliar para validar formato de token (UUID ou string válida)
   function validarFormatoToken(token) {
@@ -35,12 +36,43 @@ export function AuthProvider({ children }) {
     }
 
     try {
-      const { data, error } = await supabase
+      // Adiciona timeout para a requisição (com tratamento de erro melhorado)
+      const queryPromise = supabase
         .from('tokens_acesso')
         .select('*')
         .eq('token', token.trim())
         .eq('ativo', true)
         .single()
+        .catch(err => {
+          console.error('[Auth] Erro na query do token:', err)
+          throw err
+        })
+
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout na validação do token')), 3000)
+      )
+
+      let queryResult
+      try {
+        queryResult = await Promise.race([queryPromise, timeoutPromise])
+      } catch (raceError) {
+        // Se for timeout ou erro de rede, trata aqui
+        if (raceError.message.includes('Timeout')) {
+          console.error('[Auth] Timeout na validação do token QR Code')
+        } else {
+          console.error('[Auth] Erro na validação do token:', raceError)
+        }
+        try {
+          localStorage.removeItem('gowork_token_n1')
+        } catch (e) {
+          console.warn('[Auth] Erro ao remover token:', e)
+        }
+        setUser(null)
+        setLoading(false)
+        return
+      }
+
+      const { data, error } = queryResult
 
       if (error) {
         if (error.code === 'PGRST116') {
@@ -127,6 +159,13 @@ export function AuthProvider({ children }) {
     if (inicializadoRef.current) return
     inicializadoRef.current = true
 
+    // Timeout de segurança - força finalização do loading após 4 segundos
+    // Garante que o loading sempre termina, mesmo em caso de erro de rede
+    loadingTimeoutRef.current = setTimeout(() => {
+      console.error('[Auth] TIMEOUT: Forçando finalização do loading após 4 segundos')
+      setLoading(false)
+    }, 4000)
+
     async function inicializarAuth() {
       try {
         console.log('[Auth] Iniciando autenticação...')
@@ -145,33 +184,97 @@ export function AuthProvider({ children }) {
 
         if (tokenSalvo) {
           console.log('[Auth] Validando token QR Code...')
-          await validarTokenN1(tokenSalvo)
+          // Adiciona timeout para validação do token (reduzido para mobile)
+          const validacaoPromise = validarTokenN1(tokenSalvo)
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout na validação do token')), 2500)
+          )
+          
+          try {
+            await Promise.race([validacaoPromise, timeoutPromise])
+          } catch (error) {
+            console.error('[Auth] Erro ou timeout na validação do token:', error)
+            setUser(null)
+            setLoading(false)
+          }
+          if (loadingTimeoutRef.current) {
+            clearTimeout(loadingTimeoutRef.current)
+            loadingTimeoutRef.current = null
+          }
           return
         }
 
         // Verifica sessão Supabase (usa localStorage automaticamente)
         console.log('[Auth] Verificando sessão Supabase...')
-        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        // Adiciona timeout para getSession (reduzido para mobile)
+        const sessionPromise = supabase.auth.getSession()
+          .catch(err => {
+            console.error('[Auth] Erro na chamada getSession:', err)
+            throw err
+          })
+        
+        const sessionTimeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout ao obter sessão')), 2500)
+        )
+        
+        let sessionResult
+        try {
+          sessionResult = await Promise.race([sessionPromise, sessionTimeoutPromise])
+        } catch (error) {
+          console.error('[Auth] Erro ou timeout ao obter sessão:', error)
+          setUser(null)
+          setLoading(false)
+          if (loadingTimeoutRef.current) {
+            clearTimeout(loadingTimeoutRef.current)
+            loadingTimeoutRef.current = null
+          }
+          return
+        }
+        
+        const { data: { session }, error } = sessionResult || { data: { session: null }, error: null }
         
         if (error) {
           console.error('[Auth] Erro ao obter sessão:', error)
           setUser(null)
           setLoading(false)
+          if (loadingTimeoutRef.current) {
+            clearTimeout(loadingTimeoutRef.current)
+            loadingTimeoutRef.current = null
+          }
           return
         }
 
         console.log('[Auth] Sessão Supabase:', session ? 'ENCONTRADA' : 'NÃO ENCONTRADA')
 
         if (session?.user) {
-          setLoading(true)
           console.log('[Auth] Carregando perfil do usuário:', session.user.id)
-          const perfil = await carregarPerfilUsuario(session.user.id)
+          
+          // Adiciona timeout para carregar perfil (reduzido para mobile)
+          const perfilPromise = carregarPerfilUsuario(session.user.id)
+            .catch(err => {
+              console.error('[Auth] Erro ao carregar perfil:', err)
+              return null // Retorna null em caso de erro
+            })
+          
+          const perfilTimeoutPromise = new Promise((resolve) => 
+            setTimeout(() => resolve(null), 2500)
+          )
+          
+          let perfil
+          try {
+            perfil = await Promise.race([perfilPromise, perfilTimeoutPromise])
+          } catch (error) {
+            console.error('[Auth] Erro ao processar perfil:', error)
+            perfil = null
+          }
+          
           if (perfil) {
             console.log('[Auth] Perfil carregado:', perfil.nome)
             setUser(perfil)
           } else {
-            // Se não há perfil, ainda permite login básico
-            console.log('[Auth] Perfil não encontrado, usando dados básicos')
+            // Se não há perfil ou timeout, ainda permite login básico
+            console.log('[Auth] Perfil não encontrado ou timeout, usando dados básicos')
             setUser({
               id: session.user.id,
               email: session.user.email,
@@ -188,14 +291,30 @@ export function AuthProvider({ children }) {
           setUser(null)
           setLoading(false)
         }
+        
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current)
+          loadingTimeoutRef.current = null
+        }
       } catch (error) {
         console.error('[Auth] Erro na inicialização:', error)
         setUser(null)
         setLoading(false)
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current)
+          loadingTimeoutRef.current = null
+        }
       }
     }
 
     inicializarAuth()
+    
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+        loadingTimeoutRef.current = null
+      }
+    }
 
     // Escuta mudanças de autenticação
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -216,11 +335,32 @@ export function AuthProvider({ children }) {
 
         if (event === 'SIGNED_IN' && session?.user) {
           setLoading(true)
-          const perfil = await carregarPerfilUsuario(session.user.id)
-          if (perfil) {
-            setUser(perfil)
-          } else {
-            // Se não há perfil, ainda permite login básico
+          try {
+            // Adiciona timeout para carregar perfil
+            const perfilPromise = carregarPerfilUsuario(session.user.id)
+            const perfilTimeoutPromise = new Promise((resolve) => 
+              setTimeout(() => resolve(null), 3000)
+            )
+            
+            const perfil = await Promise.race([perfilPromise, perfilTimeoutPromise])
+            
+            if (perfil) {
+              setUser(perfil)
+            } else {
+              // Se não há perfil ou timeout, ainda permite login básico
+              setUser({
+                id: session.user.id,
+                email: session.user.email,
+                nome: session.user.email,
+                role: 'user',
+                tipo: 'email_senha',
+                access_medicoes: false,
+                access_dp_rh: false
+              })
+            }
+          } catch (error) {
+            console.error('[Auth] Erro ao processar SIGNED_IN:', error)
+            // Em caso de erro, ainda permite login básico
             setUser({
               id: session.user.id,
               email: session.user.email,
@@ -230,8 +370,9 @@ export function AuthProvider({ children }) {
               access_medicoes: false,
               access_dp_rh: false
             })
+          } finally {
+            setLoading(false)
           }
-          setLoading(false)
         } else if (event === 'SIGNED_OUT') {
           // Limpa token QR Code também ao fazer logout
           localStorage.removeItem('gowork_token_n1')

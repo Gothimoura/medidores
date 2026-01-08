@@ -24,24 +24,24 @@ function RotaPrivada({ children }) {
   }, [loading, user])
   
   useEffect(() => {
-    // Timeout de aviso após 3 segundos
+    // Timeout de aviso após 2 segundos (reduzido para mobile)
     const timer = setTimeout(() => {
       if (loading) {
-        console.warn('[App] Loading demorando mais que 3 segundos')
+        console.warn('[App] Loading demorando mais que 2 segundos')
         setTimeoutReached(true)
       }
-    }, 3000)
+    }, 2000)
     return () => clearTimeout(timer)
   }, [loading])
   
   useEffect(() => {
-    // Timeout absoluto após 10 segundos - força redirecionamento (aumentado para mobile)
+    // Timeout absoluto após 6 segundos - força redirecionamento (reduzido para mobile)
     const forceTimeout = setTimeout(() => {
       if (loading) {
         console.error('[App] Timeout absoluto de autenticação: redirecionando para login')
         setForceRedirect(true)
       }
-    }, 10000)
+    }, 6000)
     return () => clearTimeout(forceTimeout)
   }, [loading])
 
@@ -54,29 +54,31 @@ function RotaPrivada({ children }) {
   // Se está carregando, mostra loading
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 gap-4">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 gap-4 px-4">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        <p className="text-gray-600 font-medium">Verificando autenticação...</p>
+        <p className="text-gray-600 font-medium text-center">Verificando autenticação...</p>
         {timeoutReached && (
-          <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg max-w-md text-center">
-            <p className="text-sm text-yellow-800">
-              O carregamento está demorando mais que o esperado. 
-              <br />
-              <button 
-                onClick={() => {
-                  try {
-                    localStorage.clear()
-                    sessionStorage.clear()
-                  } catch (e) {
-                    console.warn('[App] Erro ao limpar storage:', e)
-                  }
-                  window.location.href = '/login'
-                }} 
-                className="mt-2 text-blue-600 hover:underline font-semibold"
-              >
-                Ir para Login
-              </button>
+          <div className="mt-4 p-6 bg-yellow-50 border-2 border-yellow-300 rounded-xl max-w-md text-center shadow-lg">
+            <p className="text-base font-semibold text-yellow-900 mb-3">
+              O carregamento está demorando mais que o esperado.
             </p>
+            <p className="text-sm text-yellow-800 mb-4">
+              Isso pode ser um problema de conexão. Tente novamente ou limpe os dados do navegador.
+            </p>
+            <button 
+              onClick={() => {
+                try {
+                  localStorage.clear()
+                  sessionStorage.clear()
+                } catch (e) {
+                  console.warn('[App] Erro ao limpar storage:', e)
+                }
+                window.location.href = '/login'
+              }} 
+              className="w-full py-3 px-6 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 active:scale-95 transition-all"
+            >
+              Ir para Login
+            </button>
           </div>
         )}
       </div>

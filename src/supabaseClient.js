@@ -6,6 +6,15 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 // Log para debug (remover em produção)
 console.log('[Supabase] URL configurada:', supabaseUrl ? 'SIM' : 'NÃO')
+if (supabaseUrl) {
+  // Mostra apenas o domínio para segurança
+  try {
+    const urlObj = new URL(supabaseUrl)
+    console.log('[Supabase] Domínio:', urlObj.hostname)
+  } catch (e) {
+    console.log('[Supabase] URL:', supabaseUrl.substring(0, 30) + '...')
+  }
+}
 console.log('[Supabase] Key configurada:', supabaseAnonKey ? 'SIM' : 'NÃO')
 
 if (!supabaseUrl || !supabaseAnonKey) {
