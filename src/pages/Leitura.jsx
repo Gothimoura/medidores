@@ -281,7 +281,8 @@ export default function Leitura() {
       if (error.message.includes('storage.objects.create')) {
         friendlyMessage = 'Erro ao salvar a foto. Verifique se o bucket "evidencias" existe e se as permissões estão corretas.'
       }
-      alert(friendlyMessage)
+      setMensagem({ tipo: 'erro', texto: friendlyMessage })
+      setTimeout(() => setMensagem(null), 5000)
     } finally {
       setLoading(false)
     }

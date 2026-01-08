@@ -206,9 +206,11 @@ export function AuthProvider({ children }) {
   }
 
   async function logout() {
+    // Limpa o token da sessão ANTES de deslogar do Supabase.
+    // Isso evita que o onAuthStateChange re-autentique o usuário QR Code.
+    sessionStorage.removeItem('gowork_token_n1')
     await supabase.auth.signOut()
     setUser(null)
-    sessionStorage.removeItem('gowork_token_n1')
   }
 
   // Nova função para salvar leituras de água ou energia

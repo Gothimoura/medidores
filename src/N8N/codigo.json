@@ -1,0 +1,110 @@
+{
+  "name": "Sistema de Medição",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nova-leitura",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "893c2130-18a1-46b1-abeb-b0c1da65dfc9",
+      "name": "Webhook",
+      "webhookId": "187979b6-fb8d-48c4-8c26-37ebc6311dd1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pega os dados que vieram do Webhook (do passo anterior)\n// IMPORTANTE: Ajuste 'body' se o seu JSON vier com outro nome ou direto na raiz\nconst dados = items[0].json.body || items[0].json;\n\n// Monta a mensagem formatada para o WhatsApp\n// Usamos *asteriscos* para negrito\nconst mensagem = `📊 *Nova Leitura Recebida!*\n\n🏢 *Medidor:* ${dados.nome_medidor || 'Não informado'}\n💧/⚡ *Tipo:* ${dados.tipo || 'Geral'}\n🔢 *Leitura:* ${dados.leitura}\n👤 *Enviado por:* ${dados.usuario || 'Sistema'}\n\n📅 *Data:* ${new Date().toLocaleString('pt-BR')}\n\n_Mensagem automática do Sistema de Medição_`;\n\n// Retorna apenas a mensagem pronta para o próximo passo\nreturn [\n  {\n    json: {\n      mensagem_pronta: mensagem,\n      numero_destino: \"5511999999999\" // Coloque o número do admin aqui ou venha do backend\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "15dc2476-9810-4c4d-9796-bcda049fe365",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gowork.uazapi.com/send/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "66960289-16fa-4037-b375-ad2b17662ab8"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "=5511916732004"
+            },
+            {
+              "name": "text",
+              "value": "="
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f6062187-dd43-48a9-8062-8dc69dba0adf",
+      "name": "Consolação",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        464,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Consolação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "10de2332-ba7d-4a7e-94c8-c371444188bf",
+  "meta": {
+    "instanceId": "17be6445c9e23b9dd57a36ffe09f3fd049fe8d0da2b35a2a0af6dcad08595fbd"
+  },
+  "id": "u6o4CKvSbwyOaoEy",
+  "tags": []
+}

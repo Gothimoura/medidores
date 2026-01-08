@@ -83,8 +83,12 @@ export default function GerenciarUsuarios() {
 
       setMensagem({ tipo: 'sucesso', texto: 'Usuário atualizado com sucesso!' })
       setEditingId(null)
-      setEditForm({})
-      fetchUsuarios()
+      // Atualiza o estado local para evitar recarregar a lista e manter a posição.
+      setUsuarios(currentUsers =>
+        currentUsers.map(u =>
+          u.id === usuarioId ? { ...u, ...editForm } : u
+        )
+      )
       
       setTimeout(() => setMensagem(null), 3000)
     } catch (error) {
