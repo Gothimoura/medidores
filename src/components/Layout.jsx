@@ -1,5 +1,5 @@
 import { Outlet, useNavigate } from 'react-router-dom'
-import { useMemo } from 'react'
+import { useMemo, useEffect } from 'react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { LogOut } from 'lucide-react'
@@ -11,6 +11,50 @@ export default function Layout() {
   const { tipoAtivo } = useTheme()
   const { logout, user } = useAuth()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const checkVersion = async () => {
+      try {
+        // Adiciona um parâmetro para evitar o cache do navegador
+        const response = await fetch(`/version.json?v=${new Date().getTime()}`);
+        if (!response.ok) {
+          // Não bloqueia o usuário se a verificação falhar (ex: offline)
+          console.warn(`Falha ao buscar version.json: ${response.statusText}`);
+          return;
+        }
+        const serverConfig = await response.json();
+        const serverVersion = serverConfig.version;
+        const localVersion = localStorage.getItem('app_version');
+
+        if (localVersion && localVersion !== serverVersion) {
+          console.log(`Nova versão detectada. Servidor: ${serverVersion}, Local: ${localVersion}. Limpando dados e recarregando.`);
+          localStorage.clear();
+          sessionStorage.clear();
+          localStorage.setItem('app_version', serverVersion);
+          window.location.reload(true);
+        } else if (!localVersion) {
+          localStorage.setItem('app_version', serverVersion);
+        }
+      } catch (error) {
+        console.error('Falha ao verificar a versão da aplicação:', error);
+      }
+    };
+
+    // Verifica a versão na carga inicial
+    checkVersion();
+
+    // Verifica novamente quando o usuário volta para a aba do navegador
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkVersion();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Limpa o listener quando o componente é desmontado
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   const handleLogout = () => {
     logout()
