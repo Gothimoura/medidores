@@ -168,7 +168,8 @@ export default function Dashboard() {
       const { data } = await supabase
         .from('med_medidores')
         .select('local_unidade, andar')
-        .eq('tipo', tipoAtivo);
+        .eq('tipo', tipoAtivo)
+        .or('ativo.is.null,ativo.eq.true'); // Apenas medidores ativos
 
       if (data) {
         const unidades = [...new Set(data.map(d => d.local_unidade).filter(Boolean))].sort();

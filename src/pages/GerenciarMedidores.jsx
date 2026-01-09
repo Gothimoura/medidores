@@ -5,7 +5,7 @@ import {
   Gauge, Search, Edit2, Save, X, Plus, Trash2, AlertCircle, 
   CheckCircle2, Loader2, Droplets, Zap, QrCode, Eye, Download,
   FileText, Building, Layers, Filter, ChevronDown, ChevronUp,
-  RefreshCw, Copy, Check
+  RefreshCw, Copy, Check, Power, PowerOff
 } from 'lucide-react'
 
 // Componente simples de QR Code usando API externa
@@ -386,7 +386,8 @@ export default function GerenciarMedidores() {
           tipo: editForm.tipo,
           unidade: editForm.unidade,
           local_unidade: editForm.local_unidade,
-          andar: editForm.andar || null
+          andar: editForm.andar || null,
+          ativo: true // Novo medidor sempre é criado como ativo
           // O token é gerado automaticamente pelo banco de dados (default gen_random_uuid())
         })
 
@@ -405,26 +406,98 @@ export default function GerenciarMedidores() {
     }
   }
 
-  async function handleDelete(medidorId) {
-    if (!window.confirm('Tem certeza que deseja excluir este medidor?')) return
+  async function handleDesativar(medidorId) {
+    const medidor = medidores.find(m => m.id === medidorId)
+    const nomeMedidor = medidor?.nome || 'este medidor'
+    
+    if (!window.confirm(`Tem certeza que deseja desativar ${nomeMedidor}?\n\nO medidor não será excluído do banco de dados, mas ficará inativo e não aparecerá nas leituras.`)) return
     
     try {
       const { error } = await supabase
         .from('med_medidores')
-        .delete()
+        .update({ ativo: false })
         .eq('id', medidorId)
 
-      if (error) throw error
+      if (error) {
+        console.error('Erro detalhado ao desativar medidor:', error)
+        throw error
+      }
 
-      setMensagem({ tipo: 'sucesso', texto: 'Medidor excluído com sucesso!' })
+      setMensagem({ tipo: 'sucesso', texto: 'Medidor desativado com sucesso!' })
       setSelectedItems(prev => prev.filter(id => id !== medidorId))
       fetchMedidores()
       
       setTimeout(() => setMensagem(null), 3000)
     } catch (error) {
-      console.error('Erro ao excluir medidor:', error)
-      setMensagem({ tipo: 'erro', texto: 'Erro ao excluir medidor' })
+      console.error('Erro ao desativar medidor:', error)
+      let mensagemErro = 'Erro ao desativar medidor.'
+      
+      // Verifica se o erro é relacionado ao campo não existir (PGRST204 = campo não encontrado no schema cache)
+      if (error.code === 'PGRST204' || 
+          error.code === '42703' || 
+          error.message?.includes("Could not find the 'ativo' column") ||
+          error.message?.includes('column "ativo" does not exist') || 
+          error.message?.includes('schema cache')) {
+        mensagemErro = '⚠️ O campo "ativo" não existe na tabela ou o cache precisa ser atualizado.\n\n' +
+          '📋 SOLUÇÃO:\n' +
+          '1. Acesse o Supabase Dashboard\n' +
+          '2. Vá em SQL Editor\n' +
+          '3. Execute o script: sql/adicionar_campo_ativo.sql\n' +
+          '4. Aguarde alguns segundos para o cache atualizar\n' +
+          '5. Tente novamente'
+      } else if (error.message) {
+        mensagemErro = `Erro: ${error.message}`
+      }
+      
+      setMensagem({ tipo: 'erro', texto: mensagemErro })
+      setTimeout(() => setMensagem(null), 10000)
+    }
+  }
+
+  async function handleReativar(medidorId) {
+    const medidor = medidores.find(m => m.id === medidorId)
+    const nomeMedidor = medidor?.nome || 'este medidor'
+    
+    if (!window.confirm(`Tem certeza que deseja reativar ${nomeMedidor}?`)) return
+    
+    try {
+      const { error } = await supabase
+        .from('med_medidores')
+        .update({ ativo: true })
+        .eq('id', medidorId)
+
+      if (error) {
+        console.error('Erro detalhado ao reativar medidor:', error)
+        throw error
+      }
+
+      setMensagem({ tipo: 'sucesso', texto: 'Medidor reativado com sucesso!' })
+      fetchMedidores()
+      
       setTimeout(() => setMensagem(null), 3000)
+    } catch (error) {
+      console.error('Erro ao reativar medidor:', error)
+      let mensagemErro = 'Erro ao reativar medidor.'
+      
+      // Verifica se o erro é relacionado ao campo não existir (PGRST204 = campo não encontrado no schema cache)
+      if (error.code === 'PGRST204' || 
+          error.code === '42703' || 
+          error.message?.includes("Could not find the 'ativo' column") ||
+          error.message?.includes('column "ativo" does not exist') || 
+          error.message?.includes('schema cache')) {
+        mensagemErro = '⚠️ O campo "ativo" não existe na tabela ou o cache precisa ser atualizado.\n\n' +
+          '📋 SOLUÇÃO:\n' +
+          '1. Acesse o Supabase Dashboard\n' +
+          '2. Vá em SQL Editor\n' +
+          '3. Execute o script: sql/adicionar_campo_ativo.sql\n' +
+          '4. Aguarde alguns segundos para o cache atualizar\n' +
+          '5. Tente novamente'
+      } else if (error.message) {
+        mensagemErro = `Erro: ${error.message}`
+      }
+      
+      setMensagem({ tipo: 'erro', texto: mensagemErro })
+      setTimeout(() => setMensagem(null), 10000)
     }
   }
 
@@ -587,10 +660,34 @@ export default function GerenciarMedidores() {
     setFiltroUnidade('')
   }
 
-  // Filtragem de medidores
-  const medidoresFiltrados = medidores.filter(m => {
+  // Separa medidores ativos e desativados
+  const medidoresAtivos = medidores.filter(m => m.ativo !== false)
+  const medidoresDesativados = medidores.filter(m => m.ativo === false)
+
+  // Filtragem de medidores ativos
+  const medidoresFiltrados = medidoresAtivos.filter(m => {
     const termo = searchTerm.toLowerCase()
     const matchSearch = 
+      m.nome?.toLowerCase().includes(termo) ||
+      m.local_unidade?.toLowerCase().includes(termo) ||
+      m.unidade?.toLowerCase().includes(termo) ||
+      m.andar?.toLowerCase().includes(termo) ||
+      m.token?.toLowerCase().includes(termo)
+    
+    const matchTipo = !filtroTipo || m.tipo === filtroTipo
+    const matchPredio = !filtroPredio || m.local_unidade === filtroPredio
+    const matchAndar = !filtroAndar || m.andar === filtroAndar
+    const matchUnidade = !filtroUnidade || m.unidade === filtroUnidade
+    
+    return matchSearch && matchTipo && matchPredio && matchAndar && matchUnidade
+  })
+
+  // Filtragem de medidores desativados (para a seção separada)
+  // Aplica os mesmos filtros da busca principal
+  const medidoresDesativadosFiltrados = medidoresDesativados.filter(m => {
+    const termo = searchTerm.toLowerCase()
+    const matchSearch = 
+      !termo || // Se não há termo de busca, mostra todos
       m.nome?.toLowerCase().includes(termo) ||
       m.local_unidade?.toLowerCase().includes(termo) ||
       m.unidade?.toLowerCase().includes(termo) ||
@@ -671,17 +768,19 @@ export default function GerenciarMedidores() {
 
         {/* MENSAGEM */}
         {mensagem && (
-          <div className={`p-4 rounded-xl flex items-center gap-3 animate-in slide-in-from-top ${
+          <div className={`p-4 rounded-xl flex items-start gap-3 animate-in slide-in-from-top ${
             mensagem.tipo === 'sucesso'
               ? 'bg-green-50 border border-green-200 text-green-900'
               : 'bg-red-50 border border-red-200 text-red-900'
           }`}>
             {mensagem.tipo === 'sucesso' ? (
-              <CheckCircle2 className="w-5 h-5" />
+              <CheckCircle2 className="w-5 h-5 mt-0.5 flex-shrink-0" />
             ) : (
-              <AlertCircle className="w-5 h-5" />
+              <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
             )}
-            <span className="font-semibold">{mensagem.texto}</span>
+            <div className="flex-1">
+              <span className="font-semibold block whitespace-pre-line">{mensagem.texto}</span>
+            </div>
           </div>
         )}
 
@@ -989,9 +1088,18 @@ export default function GerenciarMedidores() {
                         <>
                           {/* MODO VISUALIZAÇÃO */}
                           <td className="p-4">
-                            <div className="font-medium text-gray-900">{medidor.nome}</div>
+                            <div className={`font-medium ${medidor.ativo === false ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                              {medidor.nome}
+                              {medidor.ativo === false && (
+                                <span className="ml-2 px-2 py-0.5 bg-gray-200 text-gray-600 text-xs font-semibold rounded-full">
+                                  Desativado
+                                </span>
+                              )}
+                            </div>
                             {medidor.unidade && (
-                              <div className="text-sm text-gray-500">Unidade: {medidor.unidade}</div>
+                              <div className={`text-sm ${medidor.ativo === false ? 'text-gray-400' : 'text-gray-500'}`}>
+                                Unidade: {medidor.unidade}
+                              </div>
                             )}
                           </td>
                           <td className="p-4">
@@ -1030,20 +1138,33 @@ export default function GerenciarMedidores() {
                               >
                                 <Eye className="w-5 h-5" />
                               </button>
-                              <button
-                                onClick={() => handleEdit(medidor)}
-                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="Editar"
-                              >
-                                <Edit2 className="w-5 h-5" />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(medidor.id)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Excluir"
-                              >
-                                <Trash2 className="w-5 h-5" />
-                              </button>
+                              {medidor.ativo !== false && (
+                                <>
+                                  <button
+                                    onClick={() => handleEdit(medidor)}
+                                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                    title="Editar"
+                                  >
+                                    <Edit2 className="w-5 h-5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDesativar(medidor.id)}
+                                    className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+                                    title="Desativar medidor"
+                                  >
+                                    <PowerOff className="w-5 h-5" />
+                                  </button>
+                                </>
+                              )}
+                              {medidor.ativo === false && (
+                                <button
+                                  onClick={() => handleReativar(medidor.id)}
+                                  className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                  title="Reativar medidor"
+                                >
+                                  <Power className="w-5 h-5" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </>
@@ -1058,8 +1179,8 @@ export default function GerenciarMedidores() {
           {/* Resumo */}
           <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-500 flex items-center justify-between">
             <span>
-              {medidoresFiltrados.length} medidor(es) encontrado(s)
-              {filtrosAtivos > 0 && ` (filtrado de ${medidores.length})`}
+              {medidoresFiltrados.length} medidor(es) ativo(s) encontrado(s)
+              {filtrosAtivos > 0 && ` (filtrado de ${medidoresAtivos.length})`}
             </span>
             {selectedItems.length > 0 && (
               <span className="text-blue-600 font-semibold">
@@ -1068,6 +1189,110 @@ export default function GerenciarMedidores() {
             )}
           </div>
         </div>
+
+        {/* SEÇÃO DE MEDIDORES DESATIVADOS */}
+        {medidoresDesativadosFiltrados.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+            <div className="bg-gray-100 px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <PowerOff className="w-5 h-5 text-gray-600" />
+                  <h2 className="text-lg font-bold text-gray-900">Medidores Desativados</h2>
+                  <span className="px-2 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded-full">
+                    {medidoresDesativadosFiltrados.length}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-500">Estes medidores não aparecem nas leituras</p>
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Medidor</th>
+                    <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Tipo</th>
+                    <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Unidade</th>
+                    <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Andar</th>
+                    <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Token</th>
+                    <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {medidoresDesativadosFiltrados.map((medidor) => (
+                    <tr key={medidor.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="p-4">
+                        <div className="font-medium text-gray-400 line-through">
+                          {medidor.nome}
+                          <span className="ml-2 px-2 py-0.5 bg-gray-200 text-gray-600 text-xs font-semibold rounded-full">
+                            Desativado
+                          </span>
+                        </div>
+                        {medidor.unidade && (
+                          <div className="text-sm text-gray-400">
+                            Unidade: {medidor.unidade}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center gap-2">
+                          {medidor.tipo === 'agua' ? (
+                            <Droplets className="w-5 h-5 text-blue-400" />
+                          ) : (
+                            <Zap className="w-5 h-5 text-yellow-400" />
+                          )}
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                            medidor.tipo === 'agua'
+                              ? 'bg-blue-100 text-blue-600'
+                              : 'bg-yellow-100 text-yellow-600'
+                          }`}>
+                            {medidor.tipo === 'agua' ? 'Água' : 'Energia'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-4 text-sm text-gray-400">
+                        {medidor.local_unidade || '-'}
+                      </td>
+                      <td className="p-4 text-sm text-gray-400">
+                        {medidor.andar || '-'}
+                      </td>
+                      <td className="p-4">
+                        <code className="text-xs bg-gray-100 px-2 py-1 rounded font-mono text-gray-500">
+                          {medidor.token || 'N/A'}
+                        </code>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => setModalDetalhes(medidor)}
+                            className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                            title="Ver detalhes e QR Code"
+                          >
+                            <Eye className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleReativar(medidor.id)}
+                            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                            title="Reativar medidor"
+                          >
+                            <Power className="w-4 h-4" />
+                            Reativar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-500">
+              <span>
+                {medidoresDesativadosFiltrados.length} medidor(es) desativado(s)
+              </span>
+            </div>
+          </div>
+        )}
 
       </div>
 

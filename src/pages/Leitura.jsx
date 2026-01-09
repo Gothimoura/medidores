@@ -104,13 +104,14 @@ export default function Leitura() {
     }
   }
 
-  // 2. Carrega todos os medidores
+  // 2. Carrega todos os medidores (apenas ativos)
   useEffect(() => {
     async function fetchMedidores() {
       const { data } = await supabase
         .from('med_medidores')
         .select('*')
         .eq('tipo', tipoAtivo)
+        .or('ativo.is.null,ativo.eq.true') // Inclui medidores ativos ou sem campo ativo (compatibilidade)
         .order('nome')
       
       if (data) setTodosMedidores(data)
