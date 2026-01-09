@@ -139,9 +139,11 @@ export default function Dashboard() {
           // Só calcula o consumo se houver uma leitura anterior para comparar
           if (leituraDeReferencia !== undefined) {
             const consumoCalculado = Number(leituraAtual.leitura) - Number(leituraDeReferencia);
-            // Apenas considera consumos positivos para evitar problemas com "virada" de medidor
+            // Apenas considera consumos positivos. Em caso de "virada" do medidor, o consumo é a leitura atual.
             if (consumoCalculado >= 0) {
               consumo = consumoCalculado;
+            } else {
+              consumo = Number(leituraAtual.leitura);
             }
           }
 

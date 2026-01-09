@@ -15,6 +15,7 @@ import CustomSelect from '../components/CustomSelect'
 const N8N_WEBHOOK_URL = 'https://flux.gowork.com.br/webhook/nova-leitura' 
 const PORCENTAGEM_ALERTA = 0.60 
 const VALOR_SEM_ANDAR = '___SEM_ANDAR___'
+const CONSUMO_MINIMO_ALERTA_ABSOLUTO = 5 // Unidades (m³ ou kWh) para alerta quando a média é zero
 
 export default function Leitura() {
   const navigate = useNavigate()
@@ -31,6 +32,7 @@ export default function Leitura() {
   const [leituraAnterior, setLeituraAnterior] = useState(null)
   const [leituraAtual, setLeituraAtual] = useState('')
   const [mediaHistorica, setMediaHistorica] = useState(null)
+  const [numConsumosHistoricos, setNumConsumosHistoricos] = useState(0)
   
   // Estados de Foto e Upload
   const [foto, setFoto] = useState(null)
@@ -247,12 +249,13 @@ export default function Leitura() {
         .from(tabela)
         .select('leitura')
         .eq('medidor_id', medidorSelecionado)
-        .order('data_hora', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(11)
 
       if (error || !historico || historico.length === 0) {
         setLeituraAnterior(0)
         setMediaHistorica(null)
+        setNumConsumosHistoricos(0)
         return
       }
 
@@ -271,6 +274,8 @@ export default function Leitura() {
           }
         }
 
+        setNumConsumosHistoricos(consumos.length)
+
         if (consumos.length > 0) {
           const soma = consumos.reduce((a, b) => a + b, 0)
           setMediaHistorica(soma / consumos.length)
@@ -279,6 +284,7 @@ export default function Leitura() {
         }
       } else {
         setMediaHistorica(null)
+        setNumConsumosHistoricos(0)
       }
     }
     fetchDadosMedidor()
@@ -322,7 +328,7 @@ export default function Leitura() {
   const consumo = leituraAtual ? valorAtualNum - valorAnteriorNum : 0
   
   const isMenorQueAnterior = leituraAtual && leituraAnterior !== null && valorAtualNum < valorAnteriorNum
-  const isConsumoAlto = !isMenorQueAnterior && mediaHistorica && consumo > (mediaHistorica * (1 + PORCENTAGEM_ALERTA))
+  const isConsumoAlto = numConsumosHistoricos >= 3 && !isMenorQueAnterior && mediaHistorica > 0 && consumo > (mediaHistorica * (1 + PORCENTAGEM_ALERTA))
 
   const podeEnviar = leituraAtual && foto && 
                      (!isMenorQueAnterior || motivoValidacao !== '') &&

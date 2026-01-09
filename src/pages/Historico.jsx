@@ -107,15 +107,16 @@ export default function Historico() {
         const leituraAnterior = data[i + 1]
         
         let consumo = null
-        if (leituraAnterior) {
+        if (leituraAnterior && leituraAnterior.medidor_id === leituraAtual.medidor_id) {
           const diferenca = leituraAtual.leitura - leituraAnterior.leitura
           
           if (diferenca < 0) {
-            // Se for uma virada de relógio confirmada pelo usuário na tela de leitura
+            // Diferença negativa pode ser "virada" ou erro de digitação
             if (leituraAtual.observacao?.includes('ROLLOVER_CONFIRMADO')) {
-              consumo = 0 // A medição recomeça, então o consumo do período é 0
+              // É uma virada de relógio confirmada, o consumo é a leitura atual.
+              consumo = leituraAtual.leitura
             } else {
-              // Caso contrário, é um erro de digitação, então não calculamos o consumo
+              // Se não for confirmada, trata como possível erro de digitação.
               consumo = null
             }
           } else {
