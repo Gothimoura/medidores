@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { supabase } from '../supabaseClient'
@@ -8,7 +8,7 @@ import {
 } from 'recharts'
 import { 
   Zap, Droplets, TrendingUp, History, 
-  Calendar, MapPin, AlertCircle, ArrowUpRight, Filter, Building, Layers, X, ChevronDown, Activity, BarChart3, ChevronLeft, ChevronRight
+  Calendar, MapPin, AlertCircle, ArrowUpRight, Filter, Building, Layers, X, ChevronDown, Activity, BarChart3
 } from 'lucide-react'
 
 // Cores do Tema - Paleta profissional
@@ -51,9 +51,6 @@ export default function Dashboard() {
   const [filtroUnidade, setFiltroUnidade] = useState('')
   const [filtroAndar, setFiltroAndar] = useState('')
   const [showFilters, setShowFilters] = useState(true)
-  
-  // Controle de navegação mensal
-  const [mesAtualIndex, setMesAtualIndex] = useState(0)
   
   // Opções dinâmicas
   const [opcoesUnidades, setOpcoesUnidades] = useState([])
@@ -294,37 +291,18 @@ export default function Dashboard() {
     }
   }, [rawData])
 
-  // Dados do mês atual para exibição
+  // Dados de todos os meses para exibição com rolagem lateral
   const dadosTendencia = useMemo(() => {
     if (dadosPorMes.length === 0) return []
     
-    // Garante que o índice está dentro dos limites
-    const indexValido = Math.max(0, Math.min(mesAtualIndex, dadosPorMes.length - 1))
-    const mesSelecionado = dadosPorMes[indexValido]
+    // Concatena todos os dias de todos os meses em uma única lista
+    const todosOsDias = []
+    dadosPorMes.forEach(mes => {
+      todosOsDias.push(...mes.dias)
+    })
     
-    return mesSelecionado ? mesSelecionado.dias : []
-  }, [dadosPorMes, mesAtualIndex])
-
-  // Reset do índice quando os dados mudam
-  useEffect(() => {
-    if (dadosPorMes.length > 0) {
-      if (mesAtualIndex >= dadosPorMes.length) {
-        setMesAtualIndex(dadosPorMes.length - 1)
-      }
-    }
-  }, [dadosPorMes.length, mesAtualIndex])
-
-  // Reset para o mês mais recente quando tipo ou período muda
-  const prevTipoAtivo = useRef(tipoAtivo)
-  const prevPeriodo = useRef(periodo)
-  useEffect(() => {
-    if (dadosPorMes.length > 0 && 
-        (prevTipoAtivo.current !== tipoAtivo || prevPeriodo.current !== periodo)) {
-      setMesAtualIndex(dadosPorMes.length - 1)
-      prevTipoAtivo.current = tipoAtivo
-      prevPeriodo.current = periodo
-    }
-  }, [tipoAtivo, periodo, dadosPorMes.length])
+    return todosOsDias
+  }, [dadosPorMes])
 
   // Distribuição por Unidade
   const dadosPorUnidade = useMemo(() => {
@@ -363,28 +341,61 @@ export default function Dashboard() {
       .slice(0, 8); // Top 8
   }, [rawData]);
 
-  // Top Medidores (agrupado)
+  // Top Medidores (agrupado) com hierarquia: Unidade > Andar > Relógio
   const topMedidores = useMemo(() => {
     const agrupado = {}
     
     rawData.forEach(curr => {
       const nome = curr.nomeMedidor
-      if (!agrupado[nome]) {
-        agrupado[nome] = { total: 0, count: 0, unidade: curr.local_unidade }
+      const unidade = curr.local_unidade || 'Sem unidade'
+      const andar = curr.andar || 'Sem andar'
+      
+      // Chave única para agrupar por medidor
+      const chave = `${unidade}|${andar}|${nome}`
+      
+      if (!agrupado[chave]) {
+        agrupado[chave] = { 
+          total: 0, 
+          count: 0, 
+          unidade: unidade,
+          andar: andar,
+          nomeMedidor: nome
+        }
       }
-      agrupado[nome].total += curr.consumo
-      agrupado[nome].count += 1
+      agrupado[chave].total += curr.consumo
+      agrupado[chave].count += 1
     })
 
     return Object.entries(agrupado)
-      .map(([nome, info]) => ({
-        nome: nome.length > 25 ? nome.substring(0, 25) + '...' : nome,
-        nomeCompleto: nome,
-        total: Number(info.total.toFixed(2)),
-        media: Number((info.total / info.count).toFixed(2)),
-        registros: info.count,
-        unidade: info.unidade
-      }))
+      .map(([chave, info]) => {
+        // Cria label hierárquico completo: Unidade > Andar > Relógio
+        const labelHierarquico = `${info.unidade} > ${info.andar} > ${info.nomeMedidor}`
+        
+        // Label curto para o gráfico - mostra hierarquia de forma compacta
+        // Se muito longo, mostra apenas: ...Andar > Relógio
+        let labelCurto = labelHierarquico
+        if (labelHierarquico.length > 50) {
+          const partes = labelHierarquico.split(' > ')
+          if (partes.length >= 3) {
+            // Mostra: ...Andar > Relógio
+            labelCurto = `...${partes[1]} > ${partes[2]}`
+          } else if (labelHierarquico.length > 50) {
+            // Fallback: mostra últimos caracteres
+            labelCurto = '...' + labelHierarquico.substring(labelHierarquico.length - 47)
+          }
+        }
+        
+        return {
+          nome: labelCurto,
+          nomeCompleto: labelHierarquico,
+          nomeMedidor: info.nomeMedidor,
+          unidade: info.unidade,
+          andar: info.andar,
+          total: Number(info.total.toFixed(2)),
+          media: Number((info.total / info.count).toFixed(2)),
+          registros: info.count
+        }
+      })
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
   }, [rawData])
@@ -672,45 +683,12 @@ export default function Dashboard() {
                     <div>
                       <h3 className="text-base sm:text-lg font-bold text-gray-800">Evolução do Consumo</h3>
                       <p className="text-xs text-gray-400">
-                        {dadosPorMes.length > 0 && dadosPorMes[mesAtualIndex] 
-                          ? `${dadosPorMes[mesAtualIndex].label} • ${dadosTendencia.length} dias com registro`
+                        {dadosTendencia.length > 0 
+                          ? `${dadosTendencia.length} dias com registro • ${dadosPorMes.length} ${dadosPorMes.length === 1 ? 'mês' : 'meses'}`
                           : 'Carregando dados...'}
                       </p>
                     </div>
                   </div>
-                  
-                  {/* Controles de Navegação */}
-                  {dadosPorMes.length > 1 && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setMesAtualIndex(prev => Math.max(0, prev - 1))}
-                        disabled={mesAtualIndex === 0}
-                        className={`p-2 rounded-lg transition-all ${
-                          mesAtualIndex === 0
-                            ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
-                        }`}
-                        title="Mês anterior"
-                      >
-                        <ChevronLeft className="w-5 h-5" />
-                      </button>
-                      <span className="text-xs font-medium text-gray-600 px-2">
-                        {mesAtualIndex + 1} / {dadosPorMes.length}
-                      </span>
-                      <button
-                        onClick={() => setMesAtualIndex(prev => Math.min(dadosPorMes.length - 1, prev + 1))}
-                        disabled={mesAtualIndex === dadosPorMes.length - 1}
-                        className={`p-2 rounded-lg transition-all ${
-                          mesAtualIndex === dadosPorMes.length - 1
-                            ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95'
-                        }`}
-                        title="Próximo mês"
-                      >
-                        <ChevronRight className="w-5 h-5" />
-                      </button>
-                    </div>
-                  )}
                 </div>
                 
                 <div className="h-64 sm:h-80 w-full overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400" style={{ scrollbarWidth: 'thin' }}>
@@ -727,7 +705,7 @@ export default function Dashboard() {
                             angle={-45}
                             textAnchor="end"
                             height={60}
-                            interval={dadosTendencia.length > 15 ? 2 : 0}
+                            interval={dadosTendencia.length > 30 ? Math.floor(dadosTendencia.length / 15) : dadosTendencia.length > 15 ? 2 : 0}
                           />
                           <YAxis 
                             axisLine={false} 
@@ -938,7 +916,7 @@ export default function Dashboard() {
                       <BarChart 
                         data={topMedidores} 
                         layout="vertical" 
-                        margin={{ top: 5, right: 50, left: 10, bottom: 5 }}
+                        margin={{ top: 5, right: 50, left: 5, bottom: 5 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#F3F4F6" />
                         <XAxis 
@@ -951,18 +929,23 @@ export default function Dashboard() {
                         <YAxis 
                           dataKey="nome" 
                           type="category" 
-                          width={100}
+                          width={200}
                           axisLine={false} 
                           tickLine={false}
-                          tick={{fill: '#374151', fontSize: 10, fontWeight: 600}}
+                          tick={{fill: '#374151', fontSize: 9, fontWeight: 600}}
+                          interval={0}
                         />
                         <Tooltip 
                           formatter={(value, name) => [
                             `${Number(value).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${unidadeMedida}`,
                             name === 'total' ? 'Total' : 'Média'
                           ]}
-                          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 40px rgba(0,0,0,0.15)' }}
-                          labelStyle={{ fontWeight: 'bold', marginBottom: '4px' }}
+                          labelFormatter={(label) => {
+                            const item = topMedidores.find(d => d.nome === label)
+                            return item ? item.nomeCompleto : label
+                          }}
+                          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 40px rgba(0,0,0,0.15)', maxWidth: '300px' }}
+                          labelStyle={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '11px' }}
                         />
                         <Bar 
                           dataKey="total" 
@@ -1067,9 +1050,11 @@ export default function Dashboard() {
                       <thead>
                         <tr>
                           <th className="pb-2 sm:pb-3 px-2 sm:px-4 text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider">#</th>
-                          <th className="pb-2 sm:pb-3 px-2 sm:px-4 text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider">Medidor</th>
+                          <th className="pb-2 sm:pb-3 px-2 sm:px-4 text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider">Hierarquia</th>
                           <th className="pb-2 sm:pb-3 px-2 sm:px-4 text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider hidden sm:table-cell">Unidade</th>
-                          <th className="pb-2 sm:pb-3 px-2 sm:px-4 text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider text-right hidden md:table-cell">Registros</th>
+                          <th className="pb-2 sm:pb-3 px-2 sm:px-4 text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider hidden md:table-cell">Andar</th>
+                          <th className="pb-2 sm:pb-3 px-2 sm:px-4 text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider hidden lg:table-cell">Relógio</th>
+                          <th className="pb-2 sm:pb-3 px-2 sm:px-4 text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider text-right hidden xl:table-cell">Registros</th>
                           <th className="pb-2 sm:pb-3 px-2 sm:px-4 text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider text-right hidden lg:table-cell">Média</th>
                           <th className="pb-2 sm:pb-3 px-2 sm:px-4 text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider text-right">Total</th>
                         </tr>
@@ -1088,14 +1073,28 @@ export default function Dashboard() {
                               </span>
                             </td>
                             <td className="py-2 sm:py-3 px-2 sm:px-4 font-semibold text-gray-700 text-xs sm:text-sm" title={item.nomeCompleto}>
-                              {item.nome}
+                              <div className="flex flex-col">
+                                <span className="text-[10px] text-gray-400">{item.unidade}</span>
+                                <span className="text-[10px] text-gray-500">{item.andar}</span>
+                                <span className="font-bold">{item.nomeMedidor}</span>
+                              </div>
                             </td>
                             <td className="py-2 sm:py-3 px-2 sm:px-4 hidden sm:table-cell">
-                              <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 bg-gray-100 rounded-lg text-[10px] sm:text-xs font-semibold text-gray-600">
-                                {item.unidade || 'Geral'}
+                              <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 bg-blue-50 text-blue-700 rounded-lg text-[10px] sm:text-xs font-semibold">
+                                {item.unidade || 'Sem unidade'}
                               </span>
                             </td>
-                            <td className="py-2 sm:py-3 px-2 sm:px-4 text-right text-xs sm:text-sm text-gray-500 font-medium hidden md:table-cell">
+                            <td className="py-2 sm:py-3 px-2 sm:px-4 hidden md:table-cell">
+                              <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 bg-purple-50 text-purple-700 rounded-lg text-[10px] sm:text-xs font-semibold">
+                                {item.andar || 'Sem andar'}
+                              </span>
+                            </td>
+                            <td className="py-2 sm:py-3 px-2 sm:px-4 hidden lg:table-cell">
+                              <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 bg-gray-100 text-gray-700 rounded-lg text-[10px] sm:text-xs font-semibold">
+                                {item.nomeMedidor}
+                              </span>
+                            </td>
+                            <td className="py-2 sm:py-3 px-2 sm:px-4 text-right text-xs sm:text-sm text-gray-500 font-medium hidden xl:table-cell">
                               {item.registros}
                             </td>
                             <td className="py-2 sm:py-3 px-2 sm:px-4 text-right text-xs sm:text-sm text-gray-500 font-medium hidden lg:table-cell">
