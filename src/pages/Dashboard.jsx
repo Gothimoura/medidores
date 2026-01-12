@@ -235,11 +235,17 @@ export default function Dashboard() {
   // Aplica filtros
   const rawData = useMemo(() => {
     let dados = allData
-    if (filtroUnidade) {
-      dados = dados.filter(d => d.local_unidade === filtroUnidade)
+    if (filtroUnidade && filtroUnidade.trim() !== '') {
+      dados = dados.filter(d => {
+        const unidade = d.local_unidade || ''
+        return unidade.trim() === filtroUnidade.trim()
+      })
     }
-    if (filtroAndar) {
-      dados = dados.filter(d => d.andar === filtroAndar)
+    if (filtroAndar && filtroAndar.trim() !== '') {
+      dados = dados.filter(d => {
+        const andar = d.andar || ''
+        return andar.trim() === filtroAndar.trim()
+      })
     }
     return dados
   }, [allData, filtroUnidade, filtroAndar])
@@ -402,6 +408,64 @@ export default function Dashboard() {
       .slice(0, 8); // Top 8
   }, [rawData]);
 
+  // Distribuição por Andar agrupado por Unidade (um gráfico por unidade)
+  const dadosPorAndarPorUnidade = useMemo(() => {
+    // rawData já está filtrado por unidade e andar, então apenas agrupamos
+    const agrupadoPorUnidade = {};
+    
+    // Se não há dados filtrados, retorna array vazio
+    if (!rawData || rawData.length === 0) {
+      return [];
+    }
+    
+    rawData.forEach(curr => {
+      const andar = curr.andar || 'N/A';
+      const unidade = curr.local_unidade || 'Sem unidade';
+      
+      // Garante que apenas dados válidos sejam processados
+      if (!unidade || unidade.trim() === '') {
+        return;
+      }
+      
+      if (!agrupadoPorUnidade[unidade]) {
+        agrupadoPorUnidade[unidade] = {};
+      }
+      
+      if (!agrupadoPorUnidade[unidade][andar]) {
+        agrupadoPorUnidade[unidade][andar] = 0;
+      }
+      
+      agrupadoPorUnidade[unidade][andar] += curr.consumo || 0;
+    });
+
+    // Converte para array de unidades, cada uma com seus andares
+    // Filtra unidades que não têm dados (importante para quando há filtros)
+    return Object.entries(agrupadoPorUnidade)
+      .map(([unidade, andares]) => {
+        const dadosAndares = Object.entries(andares)
+          .filter(([andar, value]) => value > 0) // Remove andares com consumo zero
+          .map(([andar, value]) => ({
+            name: andar,
+            andar: andar,
+            unidade: unidade,
+            value: Number(value.toFixed(2))
+          }))
+          .sort((a, b) => b.value - a.value);
+        
+        return {
+          unidade: unidade,
+          dados: dadosAndares
+        };
+      })
+      .filter(unidadeData => unidadeData.dados.length > 0 && unidadeData.dados.some(d => d.value > 0)) // Remove unidades sem dados válidos
+      .sort((a, b) => {
+        // Ordena por total de consumo da unidade (soma de todos os andares)
+        const totalA = a.dados.reduce((sum, item) => sum + item.value, 0);
+        const totalB = b.dados.reduce((sum, item) => sum + item.value, 0);
+        return totalB - totalA;
+      });
+  }, [rawData]);
+
   // Top Medidores (agrupado) com hierarquia: Unidade > Andar > Relógio
   const topMedidores = useMemo(() => {
     const agrupado = {}
@@ -492,9 +556,9 @@ export default function Dashboard() {
         </div>
 
         {/* CARDS PRINCIPAIS */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-6">
           {/* Consumo Total */}
-          <div className={`relative overflow-hidden rounded-3xl p-4 sm:p-6 shadow-xl ${
+          <div className={`relative overflow-hidden rounded-3xl p-4 sm:p-6 shadow-xl md:col-span-2 lg:col-span-1 ${
             tipoAtivo === 'agua' 
               ? 'bg-gradient-to-br from-sky-500 to-blue-600' 
               : 'bg-gradient-to-br from-amber-400 to-orange-500'
@@ -574,7 +638,7 @@ export default function Dashboard() {
         </div>
 
         {/* FILTROS */}
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-200/50 overflow-hidden">
+        <div className="w-full bg-white rounded-3xl shadow-sm border border-gray-200/50 overflow-hidden">
           <button
             onClick={() => setShowFilters(!showFilters)}
             className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50/50 transition-colors"
@@ -595,10 +659,10 @@ export default function Dashboard() {
 
           {showFilters && (
             <div className="px-5 pb-5 border-t border-gray-100 pt-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className={`grid gap-4 w-full ${periodo === 0 ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'} auto-rows-fr`}>
                 
                 {/* Período */}
-                <div>
+                <div className="w-full">
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-2 tracking-wider">Período</label>
                   <select
                     value={periodo}
@@ -624,7 +688,7 @@ export default function Dashboard() {
 
                 {periodo === 0 && (
                   <>
-                    <div>
+                    <div className="w-full">
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-2 tracking-wider">De</label>
                       <input
                         type="date"
@@ -634,7 +698,7 @@ export default function Dashboard() {
                         className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 text-sm font-medium transition-all"
                       />
                     </div>
-                    <div>
+                    <div className="w-full">
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-2 tracking-wider">Até</label>
                       <input
                         type="date"
@@ -647,7 +711,7 @@ export default function Dashboard() {
                   </>
                 )}
 
-                <div>
+                <div className="w-full">
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-2 tracking-wider">
                     <Building className="w-3 h-3 inline mr-1" />
                     Unidade
@@ -664,7 +728,7 @@ export default function Dashboard() {
                   </select>
                 </div>
 
-                <div>
+                <div className="w-full">
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-2 tracking-wider">
                     <Layers className="w-3 h-3 inline mr-1" />
                     Andar
@@ -725,10 +789,10 @@ export default function Dashboard() {
           <div className="space-y-6">
             
             {/* GRÁFICOS */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 xl:gap-8">
+            <div className="grid grid-cols-1 gap-6 xl:gap-8">
               
               {/* Gráfico de Barras - Evolução Mensal */}
-              <div className="lg:col-span-2 bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 p-4 sm:p-6">
+              <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-4 sm:mb-6">
                   <div className="flex items-center gap-3">
                     <div className={`p-2.5 rounded-xl ${tipoAtivo === 'agua' ? 'bg-sky-100' : 'bg-amber-100'}`}>
@@ -812,81 +876,9 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {/* Gráfico de Barras - Por Unidade */}
-              <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 p-4 sm:p-6">
-                <div className="flex items-center gap-3 mb-4 sm:mb-6">
-                  <div className={`p-2.5 rounded-xl ${tipoAtivo === 'agua' ? 'bg-sky-100' : 'bg-amber-100'}`}>
-                    <Building className={`w-5 h-5 sm:w-6 sm:h-6 ${tipoAtivo === 'agua' ? 'text-sky-600' : 'text-amber-600'}`} />
-                  </div>
-                  <div>
-                    <h3 className="text-base sm:text-lg font-bold text-gray-800">Por Unidade</h3>
-                    <p className="text-xs text-gray-400">{dadosPorUnidade.length} unidades</p>
-                  </div>
-                </div>
-                
-                <div className="h-80 sm:h-96 w-full">
-                  {dadosPorUnidade.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={dadosPorUnidade}
-                        layout="vertical"
-                        margin={{ top: 5, right: 40, left: 10, bottom: 5 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#F3F4F6" />
-                        <XAxis 
-                          type="number" 
-                          axisLine={false} 
-                          tickLine={false}
-                          tick={{fill: '#9CA3AF', fontSize: 10, fontWeight: 500}}
-                          tickFormatter={(v) => v.toLocaleString('pt-BR')}
-                        />
-                        <YAxis 
-                          dataKey="name" 
-                          type="category" 
-                          width={80}
-                          axisLine={false} 
-                          tickLine={false}
-                          tick={{fill: '#374151', fontSize: 10, fontWeight: 600}}
-                        />
-                        <Tooltip 
-                          formatter={(value) => [
-                            `${Number(value).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${unidadeMedida}`,
-                            'Consumo'
-                          ]}
-                          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 40px rgba(0,0,0,0.15)' }}
-                          labelStyle={{ fontWeight: 'bold', marginBottom: '4px' }}
-                        />
-                        <Bar 
-                          dataKey="value" 
-                          radius={[0, 8, 8, 0]} 
-                          barSize={20}
-                        >
-                          {dadosPorUnidade.map((entry, index) => (
-                            <Cell 
-                              key={`cell-${index}`} 
-                              fill={pieColors[index % pieColors.length]}
-                            />
-                          ))}
-                          <LabelList 
-                            dataKey="value" 
-                            position="right" 
-                            formatter={(v) => `${v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${unidadeMedida}`}
-                            style={{ fill: '#374151', fontSize: '10px', fontWeight: 'bold' }}
-                          />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-full flex items-center justify-center text-gray-400">
-                      <p className="text-sm">Sem dados</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
             </div>
 
-            {/* GRÁFICOS DE BARRAS - TOP MEDIDORES E POR ANDAR */}
+            {/* GRÁFICOS DE BARRAS - TOP MEDIDORES E POR UNIDADE */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 xl:gap-8">
               
               {/* TOP MEDIDORES - Gráfico de Barras */}
@@ -961,49 +953,58 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* GRÁFICO - POR ANDAR */}
+              {/* Gráfico de Barras - Por Unidade */}
               <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 p-4 sm:p-6">
                 <div className="flex items-center gap-3 mb-4 sm:mb-6">
                   <div className={`p-2.5 rounded-xl ${tipoAtivo === 'agua' ? 'bg-sky-100' : 'bg-amber-100'}`}>
-                    <Layers className={`w-5 h-5 sm:w-6 sm:h-6 ${tipoAtivo === 'agua' ? 'text-sky-600' : 'text-amber-600'}`} />
+                    <Building className={`w-5 h-5 sm:w-6 sm:h-6 ${tipoAtivo === 'agua' ? 'text-sky-600' : 'text-amber-600'}`} />
                   </div>
                   <div>
-                    <h3 className="text-base sm:text-lg font-bold text-gray-800">Consumo por Andar</h3>
-                    <p className="text-xs text-gray-400">{dadosPorAndar.length} andares</p>
+                    <h3 className="text-base sm:text-lg font-bold text-gray-800">Por Unidade</h3>
+                    <p className="text-xs text-gray-400">{dadosPorUnidade.length} unidades</p>
                   </div>
                 </div>
+                
                 <div className="h-80 sm:h-96 w-full">
-                  {dadosPorAndar.length > 0 ? (
+                  {dadosPorUnidade.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
-                        data={dadosPorAndar}
+                        data={dadosPorUnidade}
                         layout="vertical"
-                        margin={{ top: 5, right: 50, left: 10, bottom: 5 }}
+                        margin={{ top: 5, right: 40, left: 10, bottom: 5 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#F3F4F6" />
                         <XAxis 
                           type="number" 
-                          axisLine={false}
+                          axisLine={false} 
                           tickLine={false}
                           tick={{fill: '#9CA3AF', fontSize: 10, fontWeight: 500}}
                           tickFormatter={(v) => v.toLocaleString('pt-BR')}
                         />
-                        <YAxis
-                          dataKey="name"
-                          type="category"
-                          width={100}
-                          axisLine={false}
+                        <YAxis 
+                          dataKey="name" 
+                          type="category" 
+                          width={80}
+                          axisLine={false} 
                           tickLine={false}
-                          tick={{ fill: '#374151', fontSize: 10, fontWeight: 600 }}
+                          tick={{fill: '#374151', fontSize: 10, fontWeight: 600}}
                         />
-                        <Tooltip
-                          cursor={{ fill: 'rgba(0,0,0,0.05)' }}
-                          content={<CustomTooltipPorAndar tipo={tipoAtivo} />}
+                        <Tooltip 
+                          formatter={(value) => [
+                            `${Number(value).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${unidadeMedida}`,
+                            'Consumo'
+                          ]}
+                          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 40px rgba(0,0,0,0.15)' }}
+                          labelStyle={{ fontWeight: 'bold', marginBottom: '4px' }}
                         />
-                        <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={20}>
-                          {dadosPorAndar.map((entry, index) => (
-                            <Cell
-                              key={`cell-${index}`}
+                        <Bar 
+                          dataKey="value" 
+                          radius={[0, 8, 8, 0]} 
+                          barSize={20}
+                        >
+                          {dadosPorUnidade.map((entry, index) => (
+                            <Cell 
+                              key={`cell-${index}`} 
                               fill={pieColors[index % pieColors.length]}
                             />
                           ))}
@@ -1023,6 +1024,7 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
+
             </div>
 
             {/* Tabela complementar */}
@@ -1092,6 +1094,144 @@ export default function Dashboard() {
                       </tbody>
                     </table>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* GRÁFICOS DE BARRAS VERTICAIS POR UNIDADE - CONSUMO POR ANDAR */}
+            {dadosPorAndarPorUnidade.length > 0 && (
+              <div className="w-full">
+                <div className="flex items-center gap-3 mb-4 sm:mb-6">
+                  <div className={`p-2.5 rounded-xl ${tipoAtivo === 'agua' ? 'bg-sky-100' : 'bg-amber-100'}`}>
+                    <BarChart3 className={`w-5 h-5 sm:w-6 sm:h-6 ${tipoAtivo === 'agua' ? 'text-sky-600' : 'text-amber-600'}`} />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold text-gray-800">Consumo por Andar - Por Unidade</h3>
+                    <p className="text-xs text-gray-400">{dadosPorAndarPorUnidade.length} unidades</p>
+                  </div>
+                </div>
+                
+                {/* Grid de gráficos - melhorado para unidades com muitos andares */}
+                <div className="grid grid-cols-1 gap-6 xl:gap-8">
+                  {dadosPorAndarPorUnidade.map((unidadeData, unidadeIndex) => {
+                    const totalUnidade = unidadeData.dados.reduce((sum, item) => sum + item.value, 0);
+                    const alturaGrafico = unidadeData.dados.length > 8 ? 'h-[400px]' : 'h-80';
+                    const barSize = unidadeData.dados.length > 10 ? 25 : unidadeData.dados.length > 6 ? 35 : 45;
+                    const marginBottom = unidadeData.dados.length > 6 ? 80 : 60;
+                    const fontSizeXAxis = unidadeData.dados.length > 8 ? 9 : 10;
+                    const fontSizeLabel = unidadeData.dados.length > 8 ? '12px' : '13px';
+                    const angleXAxis = unidadeData.dados.length > 6 ? -45 : -30;
+                    
+                    return (
+                      <div 
+                        key={unidadeIndex} 
+                        className="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 p-5 sm:p-6 lg:p-8"
+                      >
+                        {/* Header do gráfico da unidade */}
+                        <div className="flex items-center justify-between mb-5 sm:mb-6">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2.5 rounded-xl ${tipoAtivo === 'agua' ? 'bg-sky-100' : 'bg-amber-100'}`}>
+                              <Building className={`w-5 h-5 sm:w-6 sm:h-6 ${tipoAtivo === 'agua' ? 'text-sky-600' : 'text-amber-600'}`} />
+                            </div>
+                            <div>
+                              <h4 className="text-base sm:text-lg font-bold text-gray-800">{unidadeData.unidade}</h4>
+                              <p className="text-xs text-gray-500">
+                                {unidadeData.dados.length} {unidadeData.dados.length === 1 ? 'andar' : 'andares'} • 
+                                Total: {totalUnidade.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} {unidadeMedida}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Gráfico de barras verticais */}
+                        {unidadeData.dados.length > 0 ? (
+                          <div className="w-full overflow-x-auto">
+                            <div className={`${alturaGrafico}`} style={{ minWidth: `${Math.max(800, unidadeData.dados.length * 100)}px`, width: '100%' }}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart
+                                  data={unidadeData.dados}
+                                  margin={{ top: 20, right: 15, left: 10, bottom: marginBottom }}
+                                >
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
+                                <XAxis 
+                                  dataKey="name"
+                                  axisLine={false}
+                                  tickLine={false}
+                                  tick={{fill: '#9CA3AF', fontSize: fontSizeXAxis, fontWeight: 500}}
+                                  angle={angleXAxis}
+                                  textAnchor="end"
+                                  height={marginBottom}
+                                  interval={0}
+                                />
+                                <YAxis 
+                                  type="number"
+                                  axisLine={false}
+                                  tickLine={false}
+                                  tick={{fill: '#9CA3AF', fontSize: 10, fontWeight: 500}}
+                                  tickFormatter={(v) => v.toLocaleString('pt-BR')}
+                                  width={60}
+                                />
+                                <Tooltip
+                                  cursor={{ fill: 'rgba(0,0,0,0.05)' }}
+                                  content={<CustomTooltipPorAndar tipo={tipoAtivo} />}
+                                />
+                                <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={barSize}>
+                                  {unidadeData.dados.map((entry, index) => (
+                                    <Cell
+                                      key={`cell-${index}`}
+                                      fill={pieColors[index % pieColors.length]}
+                                    />
+                                  ))}
+                                  <LabelList 
+                                    dataKey="value" 
+                                    position="top" 
+                                    content={((barWidth) => (props) => {
+                                      const { x, y, value, width, payload, index } = props
+                                      if (!value || value === 0) return null
+                                      const formattedValue = `${value.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${unidadeMedida}`
+                                      // No Recharts, para barras verticais com position="top",
+                                      // o x representa a posição horizontal da barra
+                                      // Precisamos calcular o centro considerando a largura real
+                                      // Tenta usar width das props primeiro (mais preciso)
+                                      let centerX = x
+                                      if (width && width > 0) {
+                                        // Se width está disponível, x é o início, então adiciona metade
+                                        centerX = x + width / 2
+                                      } else {
+                                        // Se não, usa barSize como aproximação
+                                        centerX = x + barWidth / 2
+                                      }
+                                      // Offset vertical para posicionar acima da barra
+                                      const offsetY = -10
+                                      return (
+                                        <g transform={`translate(${centerX},${y + offsetY})`}>
+                                          <text
+                                            x={0}
+                                            y={0}
+                                            textAnchor="middle"
+                                            fill="#374151"
+                                            fontSize={fontSizeLabel}
+                                            fontWeight="bold"
+                                          >
+                                            {formattedValue}
+                                          </text>
+                                        </g>
+                                      )
+                                    })(barSize)}
+                                  />
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="h-96 flex items-center justify-center text-gray-400">
+                            <p className="text-sm">Sem dados de andares para esta unidade</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
